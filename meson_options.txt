@@ -1,0 +1,6 @@
+option(
+    'build_rust_emscripten_probe',
+    type: 'boolean',
+    value: true,
+    description: 'Build the Rust to C++ Emscripten ABI smoke test.',
+)

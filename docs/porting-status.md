@@ -5,12 +5,13 @@ This document is the source of truth for support claims.
 | Area | Status | Evidence |
 |---|---|---|
 | Rust workspace | Scaffolded | Host crates and tests are checked in. |
-| Raw VapourSynth ABI | Placeholder | Opaque Rust markers only; generated bindings are deferred to Milestone 1b. |
-| Upstream core build | Build candidate | Pinned sources, Emscripten Meson build, and a Node smoke test are checked in; browser-spike CI verifies the claim. |
-| Standard plugin | Limited build candidate | Static `std` registration contains the code required for `BlankClip` and `Invert`, not the full plugin set. |
-| `BlankClip → Invert → RGBA` | Build candidate | `native/smoke.cpp` checks every pixel derived from an upstream `VSFrame`. |
-| Browser worker/canvas | Planned | Milestone 1b. |
-| Rust-to-upstream FFI | Planned | Requires a unified Emscripten module. |
+| Raw VapourSynth ABI | Placeholder | Opaque Rust markers only; generated bindings are deferred to Milestone 1b.1. |
+| Upstream core build | Linked | The Emscripten browser-spike job passed the direct Node smoke in [run 83953783328](https://github.com/PlaneSight/vapoursynth-rust-webassembly/actions/runs/83953783328). |
+| Standard plugin | Limited linked | Static `std` registration contains the code required for `BlankClip` and `Invert`, not the full plugin set. |
+| `BlankClip → Invert → RGBA` | Linked | `native/smoke.cpp` checks every pixel derived from an upstream `VSFrame` in the passing browser-spike job. |
+| Rust ↔ C++ ABI probe | Build candidate | `native/rust_smoke.cpp` will call the no-`std` Emscripten Rust static library and verify the same RGBA result. |
+| Browser worker/canvas | Planned | Milestone 1c. |
+| Rust-to-upstream ownership FFI | Planned | Milestone 1b.1 uses opaque bridge handles rather than raw upstream pointers. |
 | Pyodide API | Planned | Milestone 3. |
 | Native plugin binaries | Unsupported | They must be rebuilt from source. |
 | Dynamic plugin discovery | Unsupported | The browser patch explicitly rejects it. |

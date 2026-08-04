@@ -1,4 +1,4 @@
-//! Raw VapourSynth ABI boundary.
+//! Raw `VapourSynth` ABI boundary.
 //!
 //! Generated bindings and upstream symbols belong here. Higher-level crates
 //! must not duplicate C layouts or call raw functions directly.

@@ -12,6 +12,8 @@
 
 namespace {
 
+constexpr size_t maximum_rgba_bytes = 16U * 1024U * 1024U;
+
 class Core final {
 public:
     Core(const VSAPI *api, int flags) noexcept : api_(api), value_(api->createCore(flags)) {}
@@ -259,16 +261,19 @@ private:
 
 } // namespace
 
-extern "C" enum vs_browser_status vs_browser_render_inverted_blank(
+extern "C" vs_browser_status vs_browser_render_inverted_blank(
     uint32_t width,
     uint32_t height,
     uint8_t *rgba,
-    size_t rgba_size) noexcept {
+    uint32_t rgba_size) noexcept {
     size_t required_size = 0;
     if (rgba == nullptr || !rgba_byte_count(width, height, required_size)) {
         return VS_BROWSER_STATUS_INVALID_ARGUMENT;
     }
-    if (rgba_size < required_size) {
+    if (required_size > maximum_rgba_bytes) {
+        return VS_BROWSER_STATUS_INVALID_ARGUMENT;
+    }
+    if (static_cast<size_t>(rgba_size) < required_size) {
         return VS_BROWSER_STATUS_OUTPUT_TOO_SMALL;
     }
 
@@ -279,7 +284,7 @@ extern "C" enum vs_browser_status vs_browser_render_inverted_blank(
     }
 }
 
-extern "C" const char *vs_browser_status_message(enum vs_browser_status status) noexcept {
+extern "C" const char *vs_browser_status_message(vs_browser_status status) noexcept {
     switch (status) {
     case VS_BROWSER_STATUS_OK:
         return "ok";

@@ -12,7 +12,7 @@ upstream `std.BlankClip` (default black RGB24 frame)
 → Node-compatible Emscripten smoke executable
 ```
 
-The smoke test uses a 37×19 frame and verifies every resulting RGBA pixel is `255, 255, 255, 255`. It is intentionally headless: there is no worker, canvas, Pyodide, decoder, or direct Rust binding in this milestone.
+The direct C++ smoke test uses a 37×19 frame and verifies every resulting RGBA pixel is `255, 255, 255, 255`. A second, pending ABI smoke performs the same check through a no-`std` Rust static library. Both are intentionally headless: there is no worker, canvas, Pyodide, decoder, or JavaScript-facing Rust API in this milestone.
 
 ## Locked inputs
 
@@ -20,14 +20,16 @@ The smoke test uses a 37×19 frame and verifies every resulting RGBA pixel is `2
 |---|---:|---|
 | VapourSynth | `37eed3ddbdb61e92975d9a4b054a488e93fc9a1c` | Upstream core and public API headers. |
 | Emscripten | `3.1.68` | C++ compiler, linker, and Node executable wrapper. |
+| Rust | `1.85.0` | `no_std` static-library compiler for the ABI probe. |
 | Meson | `1.3.2` | Cross-build configuration. |
 | Patch set | `patches/vapoursynth/0001-static-browser-spike.patch` | Static plugin and one-thread browser configuration. |
 
 `third_party/lock.toml` is the machine-readable authority. The patch uses zero context deliberately, so the patch tool first verifies the exact 40-character source commit. `THIRD_PARTY_NOTICES.md` records the source licence obligations.
+`Cargo.lock` pins the workspace's Rust dependency resolution; CI and the probe build use Cargo's `--locked` mode.
 
 ## Build
 
-Install Emscripten 3.1.68, expose its tools on `PATH`, then run:
+Install Rust 1.85.0 with `wasm32-unknown-emscripten`, Emscripten 3.1.68, and Meson 1.3.2, then run:
 
 ```bash
 git submodule update --init --recursive
@@ -37,7 +39,7 @@ meson compile -C build/browser
 meson test -C build/browser --print-errorlogs
 ```
 
-`tools/build-browser.sh` executes the same sequence. The CI workflow installs the pinned Meson and Emscripten versions and runs that script from a clean checkout.
+`tools/build-browser.sh` executes the same sequence. Meson invokes `tools/build-emscripten-probe.sh` as a custom target; its Cargo output stays under the Meson build tree before `em++` performs the final link. The CI workflow installs the Emscripten Rust target, the pinned Meson and Emscripten versions, and runs that script from a clean checkout.
 
 ## Upstream patch boundary
 
@@ -60,9 +62,16 @@ It does **not** make `getFrameAsync` browser-asynchronous, support dynamic plugi
 | `vendor/vapoursynth` | Git submodule | Checked out at the locked commit; the patch tool is the only supported mutation. Reset with `git -C vendor/vapoursynth restore .`. |
 | `patches/vapoursynth/` | This repository | Reviewable patch source; changes require an upstream commit/pin review. |
 | `build/browser` | Meson | Ignored generated output; delete and recreate when toolchain inputs change. |
+| `build/browser/native/cargo` | Meson custom target / Cargo | Ignored target-local Rust build products for the ABI probe. |
 | `target` | Cargo | Ignored generated output. |
 | `.venv`, caches | Local tools | Ignored ephemeral state. |
 
-## Rust integration constraint
+## Rust ABI probe
 
-The scaffold's current `wasm32-unknown-unknown` + `wasm-bindgen` module must not be linked directly against objects from this Emscripten build. The next integration spike will use Rust's `wasm32-unknown-emscripten` target so Rust and C++ share one Emscripten ABI; Rust documents this target as the path for interoperating with C/C++ and recommends building the standard library with the matching Emscripten SDK when ABI alignment matters. See [Rust's Emscripten target documentation](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-emscripten.html).
+The scaffold's current `wasm32-unknown-unknown` + `wasm-bindgen` module must not be linked directly against objects from this Emscripten build. `wasm-bindgen` explicitly excludes the Emscripten target, so the ABI probe uses a handwritten C entry point instead.
+
+The probe compiles one `no_std`, `panic=abort` Rust static library for `wasm32-unknown-emscripten`; `em++` remains the one final linker alongside the existing C++ bridge and upstream core. Its exported function accepts `uint32_t` dimensions/output length and one transient output pointer, then returns the bridge's fixed-width `int32_t` status. The final Rust-containing `em++` link explicitly carries Rust 1.85's `-sWASM_BIGINT` and `-sABORTING_MALLOC=0` ABI settings. Rust panics and C++ exceptions must never cross that ABI.
+
+The spike rejects frames whose RGBA8 output would exceed 16 MiB before it creates an upstream core. This is a fixed-memory safety limit for the probe, not a long-term frame-transport capability claim; upstream's current core allocation path cannot reliably translate every out-of-memory condition into a status.
+
+This is intentionally narrower than a Rust standard-library or ownership claim. Rust documents Emscripten ABI variation across SDK versions and linker settings, and recommends rebuilding `std` with the matching SDK when a later layer needs it. See [Rust's Emscripten target documentation](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-emscripten.html).

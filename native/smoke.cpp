@@ -10,7 +10,8 @@ int main() {
     constexpr uint32_t height = 19;
     std::array<uint8_t, static_cast<size_t>(width) * height * 4> rgba{};
 
-    const vs_browser_status status = vs_browser_render_inverted_blank(width, height, rgba.data(), rgba.size());
+    const vs_browser_status status =
+        vs_browser_render_inverted_blank(width, height, rgba.data(), static_cast<uint32_t>(rgba.size()));
     if (status != VS_BROWSER_STATUS_OK) {
         std::fprintf(stderr, "VapourSynth smoke render failed: %s\\n", vs_browser_status_message(status));
         return static_cast<int>(status);

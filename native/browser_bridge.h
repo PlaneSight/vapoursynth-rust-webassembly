@@ -18,7 +18,9 @@ extern "C" {
 #define VS_BROWSER_NOEXCEPT
 #endif
 
-enum vs_browser_status {
+typedef int32_t vs_browser_status;
+
+enum {
     VS_BROWSER_STATUS_OK = 0,
     VS_BROWSER_STATUS_INVALID_ARGUMENT = 1,
     VS_BROWSER_STATUS_OUTPUT_TOO_SMALL = 2,
@@ -34,14 +36,15 @@ enum vs_browser_status {
 };
 
 /// Renders an inverted black RGB24 VapourSynth frame into caller-owned RGBA8 storage.
-VS_BROWSER_EXPORT enum vs_browser_status vs_browser_render_inverted_blank(
+/// Frames whose RGBA8 output exceeds the 16 MiB spike budget are rejected.
+VS_BROWSER_EXPORT vs_browser_status vs_browser_render_inverted_blank(
     uint32_t width,
     uint32_t height,
     uint8_t *rgba,
-    size_t rgba_size) VS_BROWSER_NOEXCEPT;
+    uint32_t rgba_size) VS_BROWSER_NOEXCEPT;
 
 /// Returns a stable description for a status returned by this C ABI.
-VS_BROWSER_EXPORT const char *vs_browser_status_message(enum vs_browser_status status) VS_BROWSER_NOEXCEPT;
+VS_BROWSER_EXPORT const char *vs_browser_status_message(vs_browser_status status) VS_BROWSER_NOEXCEPT;
 
 #ifdef __cplusplus
 }

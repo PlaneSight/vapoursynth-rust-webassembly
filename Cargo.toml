@@ -4,6 +4,7 @@ members = [
     "crates/vapoursynth-sys",
     "crates/vapoursynth-core",
     "crates/vapoursynth-wasm-host",
+    "crates/vapoursynth-emscripten-probe",
 ]
 
 [workspace.package]

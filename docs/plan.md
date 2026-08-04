@@ -8,7 +8,7 @@ The workspace has ownership-boundary placeholders, host tests, and a `wasm32-unk
 
 ## Milestone 1a — Headless upstream Emscripten spike
 
-**Status:** source integration present; CI is the verification authority.
+**Status:** verified by the `browser-spike` CI job on 2026-08-04.
 
 **Goal:** prove one upstream `VSFrame` can reach caller-owned RGBA8 memory without dynamic plugins or native threads.
 
@@ -38,16 +38,24 @@ Exit criteria:
 - A fresh checkout applies the patch without manual edits.
 - The smoke output is derived from the upstream frame, not a Rust or JavaScript imitation.
 
-## Milestone 1b — Browser worker and Rust bridge
+## Milestone 1b.0 — Emscripten Rust ABI probe
 
-Move the linked Rust host to the Emscripten target, generate bindings from the pinned public headers, and make `Core`, `Node`, and `Frame` wrappers own upstream references in the same module. Add a dedicated worker, transferable frame buffers, a minimal canvas presentation, and an explicit request protocol.
+Build one no-`std`, `panic=abort` Rust static library for `wasm32-unknown-emscripten`, then have the final `em++` link combine it with the existing C++ bridge and upstream core. A separate C++ smoke executable must call Rust, which calls the existing bridge, and must verify the same exact RGBA result and boundary errors as the direct C++ control.
 
 Exit criteria:
 
-- Browser code calls the real native bridge through one well-defined module boundary.
-- Rust and C++ share compatible Emscripten ABI settings.
-- Pointer ownership cannot cross JavaScript/Python/worker boundaries.
-- The browser demo renders the verified frame.
+- The Rust archive links into the same Emscripten executable as the C++ bridge.
+- The direct C++ control and the C++ → Rust → C++ smoke both pass under Node.
+- The non-unwinding C ABI uses only fixed-width scalars plus a temporary caller-owned byte span.
+- The old `wasm-bindgen` scaffold remains visibly separate and makes no linked claim.
+
+## Milestone 1b.1 — Safe upstream ownership layer
+
+Replace the probe with an opaque C++ handle ABI and safe Rust `Core`, `Node`, and `Frame` wrappers. C++ retains ownership of the versioned `VSAPI` table; Rust owns only opaque bridge handles with matching drops. Do not expose a raw `VSCore *`, `VSNode *`, `VSFrame *`, map, callback, or error-string pointer across the language boundary.
+
+## Milestone 1c — Browser worker and canvas
+
+Add a dedicated worker, transferable frame buffers, minimal canvas presentation, and an explicit request protocol. The worker is the only JavaScript-facing owner of the Emscripten module; messages contain request identifiers, data, and structured errors rather than native pointers.
 
 ## Milestone 2 — Invocation and graph semantics
 

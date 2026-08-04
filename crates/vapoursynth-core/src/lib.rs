@@ -1,4 +1,4 @@
-//! Safe ownership model for the browser-hosted VapourSynth core.
+//! Safe ownership model for the browser-hosted `VapourSynth` core.
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;
@@ -37,7 +37,7 @@ pub enum HostError {
     UpstreamUnavailable,
 }
 
-/// Generation-ready registry for resources owned by the VapourSynth worker.
+/// Generation-ready registry for resources owned by the `VapourSynth` worker.
 #[derive(Debug, Default)]
 pub struct Registry {
     next: u64,
@@ -46,6 +46,10 @@ pub struct Registry {
 
 impl Registry {
     /// Stores a resource and returns its opaque cross-worker handle.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process has issued every non-zero `u64` handle value.
     pub fn insert(&mut self, resource: Resource) -> Handle {
         self.next = self.next.checked_add(1).expect("handle space exhausted");
         let handle = Handle(NonZeroU64::new(self.next).expect("counter starts above zero"));

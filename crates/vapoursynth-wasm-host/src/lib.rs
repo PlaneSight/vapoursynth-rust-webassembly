@@ -1,4 +1,4 @@
-//! Browser-facing VapourSynth worker API.
+//! Browser-facing `VapourSynth` worker API.
 
 use wasm_bindgen::prelude::*;
 
@@ -15,6 +15,11 @@ const fn vapoursynth_sys_linked() -> bool {
 }
 
 /// Placeholder entry point for the first real upstream proof.
+///
+/// # Errors
+///
+/// Always returns a JavaScript error until a browser-facing upstream bridge is
+/// implemented.
 #[wasm_bindgen]
 pub fn render_blank_frame(_width: u32, _height: u32) -> Result<Vec<u8>, JsValue> {
     Err(JsValue::from_str(

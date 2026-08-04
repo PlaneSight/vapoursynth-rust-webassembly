@@ -18,7 +18,7 @@ impl Handle {
 }
 
 /// Resource kind stored behind an opaque handle.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Resource {
     /// An upstream `VSNode*` once the real core is linked.
     Node,
@@ -55,6 +55,11 @@ impl Registry {
     }
 
     /// Releases a resource exactly once.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HostError::UnknownHandle`] when the handle is zero, stale or
+    /// was never issued by this registry.
     pub fn remove(&mut self, raw: u64) -> Result<Resource, HostError> {
         let handle = NonZeroU64::new(raw)
             .map(Handle)

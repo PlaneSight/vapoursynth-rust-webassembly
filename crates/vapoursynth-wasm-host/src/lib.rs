@@ -7,9 +7,7 @@ use wasm_bindgen::prelude::*;
 #[must_use]
 pub fn runtime_status() -> String {
     let linked = vapoursynth_sys_linked();
-    format!(
-        "{{\"schemaVersion\":1,\"upstreamLinked\":{linked},\"phase\":\"scaffold\"}}"
-    )
+    format!("{{\"schemaVersion\":1,\"upstreamLinked\":{linked},\"phase\":\"scaffold\"}}")
 }
 
 const fn vapoursynth_sys_linked() -> bool {

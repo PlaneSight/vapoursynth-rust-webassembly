@@ -32,11 +32,8 @@ pub struct VSMap {
 }
 
 /// Minimal callback type retained while the generated API is not checked in.
-pub type VSMessageHandler = unsafe extern "C" fn(
-    message_type: i32,
-    message: *const c_char,
-    user_data: *mut c_void,
-);
+pub type VSMessageHandler =
+    unsafe extern "C" fn(message_type: i32, message: *const c_char, user_data: *mut c_void);
 
 /// Marker proving the crate is currently a scaffold, not linked upstream.
 pub const UPSTREAM_LINKED: bool = cfg!(feature = "upstream");

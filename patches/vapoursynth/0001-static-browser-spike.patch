@@ -7,10 +7,19 @@ This intentionally narrow porting patch makes the core usable by the browser
 smoke test without dynamic loading or native worker threads. It is not a full
 replacement for VapourSynth's asynchronous scheduler.
 ---
- src/core/vsapi.cpp        |  5 +++++
- src/core/vscore.cpp       | 32 +++++++++++++++++++++++++++-----
- src/core/vsthreadpool.cpp | 43 +++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 75 insertions(+), 5 deletions(-)
+src/core/float16_helper.h |  2 +-
+src/core/vsapi.cpp        |  5 +++++
+src/core/vscore.cpp       | 32 +++++++++++++++++++++++++++-----
+src/core/vsthreadpool.cpp | 43 +++++++++++++++++++++++++++++++++++++++++++
+4 files changed, 76 insertions(+), 6 deletions(-)
+
+diff --git a/src/core/float16_helper.h b/src/core/float16_helper.h
+index 7b424f7d..ad79c70d 100644
+--- a/src/core/float16_helper.h
++++ b/src/core/float16_helper.h
+@@ -34 +34 @@
+-#if (defined(__clang__) || defined(__GNUC__)) && (defined(__F16C__) || (!defined(__x86_64__) && !defined(__i386__)))
++#if !defined(__EMSCRIPTEN__) && (defined(__clang__) || defined(__GNUC__)) && (defined(__F16C__) || (!defined(__x86_64__) && !defined(__i386__)))
 
 diff --git a/src/core/vsapi.cpp b/src/core/vsapi.cpp
 index 8df20d0d..4f38b420 100644

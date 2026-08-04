@@ -46,6 +46,8 @@ The patch only enables this constrained executable path:
 - registers a selected `std` plugin implementation directly in the core;
 - disables dynamic library loading and automatic plugin discovery;
 - excludes the resize/text internal plugins and their extra dependency closure;
+- uses the upstream portable binary16 conversion fallback because Emscripten
+  wasm32 does not implement `_Float16`;
 - drives frame work synchronously with one scheduler thread; and
 - avoids waiting on a condition variable while the one-thread scheduler must make progress.
 

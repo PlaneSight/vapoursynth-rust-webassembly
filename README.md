@@ -1,94 +1,66 @@
 # VapourSynth Rust WebAssembly
 
-An architecture-first research project for running the **real upstream VapourSynth core** in a web browser, with Rust providing a safe host layer and WebAssembly/browser integration.
+An architecture-first research project for running the **real upstream VapourSynth core** in a browser-oriented WebAssembly build. It is not a JavaScript filter-graph reimplementation.
 
-This repository is intentionally not a JavaScript filter graph that merely resembles VapourSynth. The compatibility backend is expected to compile and execute upstream `libvapoursynth`; browser-native Rust filters may later exist as an additional backend.
+## Current status
 
-## Project status
+**Phase 1a: pinned upstream browser-build spike.** The tree now contains a narrowly scoped Emscripten build that statically registers the upstream `std` plugin, evaluates `BlankClip → Invert → frame 0`, and copies the planar RGB24 frame into caller-owned RGBA8 memory. The `browser-spike` CI job is the build authority for that path.
 
-**Phase 0: scaffold and build investigation.**
+This is deliberately a headless smoke test, not a canvas demo and not yet a Rust-to-VapourSynth FFI integration. The current `wasm-bindgen` crate remains a truthful scaffold: it reports that upstream is not linked in that separate `wasm32-unknown-unknown` module.
 
-Nothing in the current tree should be interpreted as a completed VapourSynth port. The initial target is deliberately narrow:
+See [the build-spike record](docs/build-spike.md), [the implementation plan](docs/plan.md), and [the support matrix](docs/porting-status.md).
 
-```text
-upstream VapourSynth core
-→ Emscripten/WASM build
-→ statically registered std plugin
-→ BlankClip
-→ frame 0 request
-→ RGBA bytes
-→ browser canvas
-```
-
-See [`docs/plan.md`](docs/plan.md) for milestones and explicit exit criteria, and [`docs/porting-status.md`](docs/porting-status.md) for the evidence-based support matrix.
-
-## Intended architecture
+## What the spike proves
 
 ```text
-Pyodide worker (Python 3.14)
-  └─ vapoursynth-compatible Python API
-       └─ typed RPC / opaque node handles
-
-VapourSynth worker
-  ├─ upstream libvapoursynth compiled to WASM
-  ├─ browser platform adapter
-  ├─ statically linked portable plugins
-  └─ Rust host and ownership layer
-
-Browser main thread
-  ├─ editor and diagnostics
-  ├─ frame/video preview
-  └─ request orchestration
+upstream VapourSynth sources at a pinned commit
+→ static std plugin registration
+→ BlankClip(37×19, RGB24)
+→ std.Invert
+→ upstream VSFrame
+→ explicit RGB-planar to RGBA8 copy
 ```
 
-Python never processes pixels. It builds and invokes real VapourSynth nodes through opaque handles. Frame execution remains in the dedicated VapourSynth worker.
+The smoke executable verifies every output pixel is opaque white. Its input is the upstream black default frame; the inversion is intentional so the test observes a real filter result rather than only allocation.
 
-## Workspace
+## Repository layout
 
-- `crates/vapoursynth-sys`: raw ABI surface and generated bindings boundary.
-- `crates/vapoursynth-core`: safe Rust ownership and error model.
-- `crates/vapoursynth-wasm-host`: browser-facing `wasm-bindgen` API.
-- `web/`: worker protocol and minimal browser harness.
-- `vendor/`: pinned upstream sources or submodules; never silently modified.
-- `docs/`: architecture, plan, compatibility claims and investigation notes.
+- `native/` — narrow C++ ABI bridge and the Emscripten smoke executable.
+- `patches/vapoursynth/` — isolated, checked upstream changes.
+- `third_party/lock.toml` — source, commit, licence, patch, and toolchain lock record.
+- `toolchains/` — Meson cross files.
+- `tools/` — deterministic build and patch-entry scripts.
+- `vendor/vapoursynth` — pinned upstream Git submodule; never edited as an unrecorded local fork.
+- `crates/` — Rust ownership and worker-protocol scaffolding, not yet linked to the native spike.
+- `docs/` — architecture, scope, status, and reproducibility records.
 
-## Non-goals for the first milestone
+## Building the browser spike
 
-- Loading existing native `.dll`, `.so`, or `.dylib` plugins.
-- Full Python package compatibility.
-- Multithreaded scheduling.
-- Video decoding or encoding.
-- Dynamic plugin discovery.
-- Claiming performance parity with native VapourSynth.
-
-## Development
-
-The Rust workspace is buildable as a host-side scaffold before the upstream core is linked:
+The spike needs Python 3.11+, Git, Meson 1.3.2, Node, and the Emscripten SDK 3.1.68 on `PATH`.
 
 ```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+git submodule update --init --recursive
+tools/build-browser.sh
 ```
 
-The browser target will eventually require:
+The script applies the locked upstream patch, configures `build/browser`, builds the executable, and runs the smoke test. For the explicit commands and artifact lifecycle, read [docs/build-spike.md](docs/build-spike.md).
 
-- Rust stable
-- `wasm-bindgen` / `wasm-pack`
-- Emscripten SDK
-- CMake and Ninja
-- Python 3.14 with `uv` for tooling and Pyodide package preparation
+## Non-goals of this milestone
 
-Exact versions will be pinned once the first upstream build spike establishes a working toolchain combination.
+- Browser worker or canvas presentation.
+- Direct Rust ownership of `VSCore`, `VSNode`, or `VSFrame`.
+- Pyodide or `.vpy` execution.
+- Dynamic plugin discovery or native plugin binaries.
+- `std.Resize` and its `zimg` dependency.
+- Threaded scheduling, WebCodecs, or performance claims.
 
 ## Design rules
 
 1. Compatibility claims require executable tests.
-2. Upstream patches must be isolated and documented.
-3. Browser limitations must be represented explicitly, not hidden behind partial emulation.
-4. Unsafe Rust remains confined to the FFI boundary.
-5. Every cross-worker resource uses generation-checked opaque handles.
-6. The first implementation prioritizes semantic correctness over clever optimization.
+2. Upstream patches stay isolated, pinned, and documented.
+3. Unsupported browser facilities fail explicitly rather than silently emulating desktop behaviour.
+4. Raw pointers do not cross JavaScript, Python, or worker boundaries.
+5. Each next layer must build on a verified upstream frame path.
 
 ## License
 

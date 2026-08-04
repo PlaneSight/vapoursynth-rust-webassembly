@@ -25,3 +25,22 @@ jobs:
         run: cargo test --workspace
       - name: Compile WebAssembly host
         run: cargo check -p vapoursynth-wasm-host --target wasm32-unknown-unknown
+
+  browser-spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Meson
+        run: |
+          python3 -m pip install --user meson==1.3.2
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install Emscripten 3.1.68
+        run: |
+          git clone --branch 3.1.68 --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 3.1.68
+          "$RUNNER_TEMP/emsdk/emsdk" activate 3.1.68
+          echo "$RUNNER_TEMP/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+      - name: Build upstream browser smoke
+        run: tools/build-browser.sh

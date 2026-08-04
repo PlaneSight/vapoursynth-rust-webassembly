@@ -2,94 +2,73 @@
 
 ## Milestone 0 — Reproducible scaffold
 
-**Goal:** establish ownership boundaries and a buildable Rust workspace without claiming upstream execution.
+**Status:** complete as a Rust-only scaffold.
 
-Exit criteria:
+The workspace has ownership-boundary placeholders, host tests, and a `wasm32-unknown-unknown` status module. It does not claim upstream execution.
 
-- Host-side Rust tests pass.
-- WASM host exports a status function.
-- CI checks formatting, Clippy, tests and `wasm32-unknown-unknown` compilation.
-- Documentation labels all placeholders accurately.
+## Milestone 1a — Headless upstream Emscripten spike
 
-## Milestone 1 — Real core, one generated frame
+**Status:** source integration present; CI is the verification authority.
 
-**Goal:** compile upstream `libvapoursynth` and the required core plugin into one Emscripten module.
+**Goal:** prove one upstream `VSFrame` can reach caller-owned RGBA8 memory without dynamic plugins or native threads.
 
 Deliverable:
 
 ```text
-BlankClip(640×360, RGB/RGBA, length=1)
+BlankClip(37×19, RGB24, length=1)
+→ std.Invert
 → request frame 0
-→ copy/transfer bytes
-→ render on canvas
+→ planar RGB to RGBA8 copy
+→ deterministic Node smoke test
 ```
 
-Work:
+Completed design work:
 
-1. Pin an upstream VapourSynth commit.
-2. Inventory source files and generated build inputs.
-3. Add a browser platform configuration with unsupported facilities disabled explicitly.
-4. Produce a static library or linkable Emscripten object.
-5. Generate bindings from the exact public headers.
-6. Implement `Core`, `Node` and `Frame` RAII wrappers.
-7. Register the required standard plugin statically.
-8. Add a browser worker and a deterministic integration test.
+1. Pin upstream VapourSynth and Emscripten versions.
+2. Track the submodule, lock record, notices, and an idempotent patch tool.
+3. Compile only the core sources required for the `BlankClip`/`Invert` path.
+4. Register the selected `std` functionality statically.
+5. Reject dynamic loading and auto-discovery in the browser build.
+6. Run this narrow path through a synchronous one-thread scheduler.
+7. Exercise a real `VSFrame` through a C ABI smoke executable.
 
 Exit criteria:
 
-- Frame bytes originate from an upstream `VSFrame`, not a Rust imitation.
-- Address/undefined-behaviour sanitizers pass for the equivalent native harness.
-- The browser demo renders the expected frame.
-- Build instructions work from a clean checkout.
+- The browser-spike CI job passes from a clean checkout.
+- A fresh checkout applies the patch without manual edits.
+- The smoke output is derived from the upstream frame, not a Rust or JavaScript imitation.
+
+## Milestone 1b — Browser worker and Rust bridge
+
+Move the linked Rust host to the Emscripten target, generate bindings from the pinned public headers, and make `Core`, `Node`, and `Frame` wrappers own upstream references in the same module. Add a dedicated worker, transferable frame buffers, a minimal canvas presentation, and an explicit request protocol.
+
+Exit criteria:
+
+- Browser code calls the real native bridge through one well-defined module boundary.
+- Rust and C++ share compatible Emscripten ABI settings.
+- Pointer ownership cannot cross JavaScript/Python/worker boundaries.
+- The browser demo renders the verified frame.
 
 ## Milestone 2 — Invocation and graph semantics
 
-Implement typed argument maps and plugin/function lookup sufficient for `std.BlankClip`, `std.Invert` and one resize operation. Add conformance tests against native VapourSynth outputs.
-
-Exit criteria:
-
-- Opaque nodes cross the JS/Python boundaries only as handles.
-- Reference counts survive chaining, replacement and explicit release.
-- Error messages preserve upstream context.
+Implement typed argument maps and plugin/function lookup sufficient for `std.BlankClip`, `std.Invert`, and one resize operation. Add differential conformance tests against pinned native VapourSynth outputs.
 
 ## Milestone 3 — Pyodide `.vpy` authoring
 
-Provide a Python 3.14 package exposing `vs.core`, `VideoNode`, format constants, function namespaces and `set_output()` through asynchronous RPC.
-
-Exit criteria:
-
-- A documented `.vpy` subset runs unchanged.
-- Unsupported APIs fail immediately with specific errors.
-- Python never receives raw frame memory unless explicitly requested.
+Provide a Python package exposing `vs.core`, `VideoNode`, format constants, function namespaces, and `set_output()` through asynchronous RPC. Unsupported APIs fail immediately with specific errors.
 
 ## Milestone 4 — Real video path
 
-Add WebCodecs input/output adapters, timeline metadata, multiple frames, cancellation and transferable-buffer transport.
+Add WebCodecs input/output adapters, timeline metadata, multiple frames, cancellation, and transferable-buffer transport.
 
 ## Milestone 5 — Scheduling and threads
 
-First measure the single-worker scheduler. Then add an opt-in threaded build using cross-origin isolation and `SharedArrayBuffer`. Maintain a single-thread fallback.
+Measure the single-worker scheduler first. Then add an opt-in threaded build guarded by cross-origin isolation and `SharedArrayBuffer`, while retaining a single-thread fallback.
 
 ## Milestone 6 — Portable plugin program
 
-Port plugins individually from source. Track build status, patches, conformance and performance per plugin. Investigate Emscripten side modules only after static linking is reliable.
+Port plugins individually from source. Track build status, patches, conformance, and performance per plugin. Investigate Emscripten side modules only after static linking is reliable.
 
 ## Required investigation records
 
-Every spike must record:
-
-- upstream commit
-- compiler/toolchain versions
-- exact configure/build flags
-- upstream patches
-- browser security headers
-- tests and observed failures
-- whether behaviour is upstream, emulated or unsupported
-
-## Explicit deferrals
-
-- arbitrary native plugin binaries
-- filesystem-based plugin discovery
-- full desktop Python environment
-- synchronous main-thread APIs
-- performance claims without benchmarks
+Every spike records its upstream commit, compiler/toolchain versions, build flags, patches, browser security headers, tests and observed failures, and whether behaviour is upstream, emulated, or unsupported.

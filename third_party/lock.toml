@@ -1,0 +1,9 @@
+[toolchain]
+emscripten = "3.1.68"
+
+[dependencies.vapoursynth]
+path = "vendor/vapoursynth"
+remote = "https://github.com/vapoursynth/vapoursynth.git"
+commit = "37eed3ddbdb61e92975d9a4b054a488e93fc9a1c"
+license = "LGPL-2.1-or-later"
+patches = ["patches/vapoursynth/0001-static-browser-spike.patch"]

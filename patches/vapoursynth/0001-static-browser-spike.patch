@@ -1,0 +1,137 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: PlaneSight <opensource@planesight.invalid>
+Date: Tue, 5 Aug 2026 00:00:00 +0000
+Subject: [PATCH] Add a static, single-threaded browser-core mode
+
+This intentionally narrow porting patch makes the core usable by the browser
+smoke test without dynamic loading or native worker threads. It is not a full
+replacement for VapourSynth's asynchronous scheduler.
+---
+ src/core/vsapi.cpp        |  5 +++++
+ src/core/vscore.cpp       | 32 +++++++++++++++++++++++++++-----
+ src/core/vsthreadpool.cpp | 43 +++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 75 insertions(+), 5 deletions(-)
+
+diff --git a/src/core/vsapi.cpp b/src/core/vsapi.cpp
+index 8df20d0d..4f38b420 100644
+--- a/src/core/vsapi.cpp
++++ b/src/core/vsapi.cpp
+@@ -141,0 +142,4 @@ static const VSFrame *VS_CC getFrame(int n, VSNode *node, char *errorMsg, int bu
++#ifdef VS_BROWSER_SINGLE_THREAD
++    node->getFrame(new VSFrameContext(n, node, &frameWaiterCallback, &g, false, false));
++    assert(g.done);
++#else
+@@ -144,0 +149 @@ static const VSFrame *VS_CC getFrame(int n, VSNode *node, char *errorMsg, int bu
++#endif
+diff --git a/src/core/vscore.cpp b/src/core/vscore.cpp
+index c027efd7..6ae60c10 100644
+--- a/src/core/vscore.cpp
++++ b/src/core/vscore.cpp
+@@ -1995 +1995,3 @@ std::filesystem::path VSCore::getLibraryPath() {
+-#ifdef VS_TARGET_OS_WINDOWS
++#ifdef VS_BROWSER_STATIC_PLUGINS
++    return {};
++#elif defined(VS_TARGET_OS_WINDOWS)
+@@ -2012,0 +2015,3 @@ void internalFiltersInitialize(VSPlugin *plugin, const VSPLUGINAPI *vspapi);
++#ifdef VS_BROWSER_STATIC_PLUGINS
++void browserStaticStdPluginInitialize(VSPlugin *plugin, const VSPLUGINAPI *vspapi);
++#endif
+@@ -2029,0 +2035 @@ VSCore::VSCore(int flags) :
++#ifndef VS_BROWSER_STATIC_PLUGINS
+@@ -2030,0 +2037 @@ VSCore::VSCore(int flags) :
++#endif
+@@ -2034,0 +2042,6 @@ VSCore::VSCore(int flags) :
++    // The internal plugin units, the loading is a bit special so they can get special flags
++    VSPlugin *p = nullptr;
++#ifdef VS_BROWSER_STATIC_PLUGINS
++    p = new VSPlugin(this);
++    browserStaticStdPluginInitialize(p, &vs_internal_vspapi);
++#else
+@@ -2045 +2057,0 @@ VSCore::VSCore(int flags) :
+-    // The internal plugin units, the loading is a bit special so they can get special flags
+@@ -2048 +2059,0 @@ VSCore::VSCore(int flags) :
+-    VSPlugin *p = nullptr;
+@@ -2054,0 +2066 @@ VSCore::VSCore(int flags) :
++#endif
+@@ -2060,0 +2073 @@ VSCore::VSCore(int flags) :
++#ifndef VS_BROWSER_STATIC_PLUGINS
+@@ -2069,2 +2081,0 @@ VSCore::VSCore(int flags) :
+-
+-
+@@ -2086,0 +2098 @@ VSCore::VSCore(int flags) :
++#endif
+@@ -2242,0 +2255,7 @@ VSPlugin::VSPlugin(const std::filesystem::path &relFilename, const std::string &
++#ifdef VS_BROWSER_STATIC_PLUGINS
++    static_cast<void>(relFilename);
++    static_cast<void>(altSearchPath);
++    static_cast<void>(loadCPUOptimized);
++    static_cast<void>(separator);
++    throw VSException("Dynamic plugin loading is unavailable in this browser build");
++#else
+@@ -2355,0 +2375 @@ VSPlugin::VSPlugin(const std::filesystem::path &relFilename, const std::string &
++#endif
+@@ -2358,0 +2379 @@ VSPlugin::~VSPlugin() {
++#ifndef VS_BROWSER_STATIC_PLUGINS
+@@ -2365,0 +2387 @@ VSPlugin::~VSPlugin() {
++#endif
+diff --git a/src/core/vsthreadpool.cpp b/src/core/vsthreadpool.cpp
+index b648e8c2..237a1561 100644
+--- a/src/core/vsthreadpool.cpp
++++ b/src/core/vsthreadpool.cpp
+@@ -51,0 +52,3 @@ size_t VSThreadPool::getNumAvailableThreads() {
++#ifdef VS_BROWSER_SINGLE_THREAD
++    return 1;
++#else
+@@ -73,0 +77 @@ size_t VSThreadPool::getNumAvailableThreads() {
++#endif
+@@ -396,0 +401,3 @@ void VSThreadPool::spawnThread() {
++#ifdef VS_BROWSER_SINGLE_THREAD
++    core->logFatal("The browser scheduler must not spawn native threads");
++#else
+@@ -399,0 +407 @@ void VSThreadPool::spawnThread() {
++#endif
+@@ -402,0 +411,7 @@ size_t VSThreadPool::setThreadCount(size_t threads) {
++#ifdef VS_BROWSER_SINGLE_THREAD
++    static_cast<void>(threads);
++    std::lock_guard<std::mutex> lock(taskLock);
++    maxThreads = 1;
++    overLimitSince = 0;
++    return maxThreads;
++#else
+@@ -417,0 +433 @@ size_t VSThreadPool::setThreadCount(size_t threads) {
++#endif
+@@ -426,0 +443,3 @@ void VSThreadPool::wakeThread() {
++#ifdef VS_BROWSER_SINGLE_THREAD
++    return;
++#else
+@@ -437,0 +457 @@ void VSThreadPool::wakeThread() {
++#endif
+@@ -441,0 +462,12 @@ void VSThreadPool::startExternal(const PVSFrameContext &context) {
++#ifdef VS_BROWSER_SINGLE_THREAD
++    {
++        std::lock_guard<std::mutex> lock(taskLock);
++        context->reqOrder = ++reqCounter;
++        context->reserveThread = false;
++        tasks.push_back(context);
++        ++activeThreads;
++    }
++
++    bool stop = true;
++    runTasks(stop);
++#else
+@@ -458,0 +491 @@ void VSThreadPool::startExternal(const PVSFrameContext &context) {
++#endif
+@@ -515,0 +549,3 @@ void VSThreadPool::waitForDone() {
++#ifdef VS_BROWSER_SINGLE_THREAD
++    return;
++#else
+@@ -518,0 +555 @@ void VSThreadPool::waitForDone() {
++#endif
+@@ -521,0 +559,5 @@ VSThreadPool::~VSThreadPool() {
++#ifdef VS_BROWSER_SINGLE_THREAD
++    assert(allThreads.empty());
++    assert(activeThreads == 0);
++    assert(idleThreads == 0);
++#else
+@@ -538,0 +581 @@ VSThreadPool::~VSThreadPool() {
++#endif

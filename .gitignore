@@ -1,7 +1,8 @@
 /target/
 /web/pkg/
 /build/
-/vendor/vapoursynth/
+/vendor/*
+!/vendor/vapoursynth/
 /.venv/
 __pycache__/
 .pytest_cache/

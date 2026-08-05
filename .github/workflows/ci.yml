@@ -39,6 +39,8 @@ jobs:
   browser-spike:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.85.0
     steps:
       - uses: actions/checkout@v4
         with:

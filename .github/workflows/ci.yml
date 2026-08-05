@@ -110,10 +110,11 @@ jobs:
       - name: Verify Emscripten sanity wrapper
         run: |
           source "$EMSDK/emsdk_env.sh"
-          printf 'int main(void) { return 0; }\n' > /tmp/meson-sanity.cpp
-          em++ /tmp/meson-sanity.cpp -o /tmp/meson-sanity.exe
-          file /tmp/meson-sanity.exe
-          node /tmp/meson-sanity.exe
+          mkdir -p build/browser/meson-private
+          printf 'int main(void) { int class_value = 0; return class_value; }\n' > build/browser/meson-private/sanitycheckcpp.cc
+          em++ build/browser/meson-private/sanitycheckcpp.cc -o build/browser/meson-private/sanitycheckcpp_cross.exe -D_FILE_OFFSET_BITS=64
+          file build/browser/meson-private/sanitycheckcpp_cross.exe
+          node build/browser/meson-private/sanitycheckcpp_cross.exe
       - name: Build upstream browser smoke
         run: |
           source "$EMSDK/emsdk_env.sh"

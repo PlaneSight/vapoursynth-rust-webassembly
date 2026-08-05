@@ -22,12 +22,17 @@ jobs:
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      - name: Test
+      - name: Test Rust workspace
         run: cargo test --locked --workspace
+      - name: Test worker protocol
+        run: node --test web/worker-protocol.test.mjs
       - name: Compile isolated wasm-bindgen scaffold
         run: cargo check --locked -p vapoursynth-wasm-host --target wasm32-unknown-unknown
 

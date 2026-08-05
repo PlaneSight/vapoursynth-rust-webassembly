@@ -30,6 +30,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Cache keys include the pinned compiler and dependency lockfile.
       - name: Restore Rust cache
         uses: actions/cache@v4
         with:

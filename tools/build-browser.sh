@@ -43,6 +43,10 @@ if [[ -z "${module_wasm:-}" || ! -f "$module_wasm" ]]; then
     echo "error: generated Emscripten WebAssembly module was not found" >&2
     exit 1
 fi
+if grep -Eq "from ['\"]module['\"]" "$module_js"; then
+    echo "error: browser Emscripten module imports the Node.js 'module' builtin" >&2
+    exit 1
+fi
 
 cp "$module_js" "$runtime_dir/vapoursynth-browser-module.js"
 cp "$module_wasm" "$runtime_dir/vapoursynth-browser-module.wasm"

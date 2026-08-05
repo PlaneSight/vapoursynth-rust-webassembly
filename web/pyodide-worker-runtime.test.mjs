@@ -25,7 +25,16 @@ function session() {
 }
 
 function linkedWorker() {
-  const main = {};
+  let onmessage;
+  const main = {
+    get onmessage() {
+      return onmessage;
+    },
+    set onmessage(handler) {
+      onmessage = handler;
+      queueMicrotask(() => handler({ data: { schemaVersion: 1, type: "ready" } }));
+    },
+  };
   const workerScope = {
     postMessage(data) {
       queueMicrotask(() => main.onmessage?.({ data }));
@@ -68,53 +77,38 @@ test("releases the Pyodide session and worker scope on shutdown", () => {
   let closed = false;
   const scope = {
     postMessage() {},
-    close() {
-      closed = true;
-    },
-  };
-  const stop = installPyodideWorkerRuntime(scope, {
-    ...session(),
-    free() {
-      freed = true;
-    },
-  });
+    close() }õöÚ$z{-®éÜj×\›ˆš[\Üİ˜\İ\œŞ[ÜœÈÂˆKˆÛ‘XYÛ›ÜİXÊY\ÜØYÙJHÂˆXYÛ›ÜİXÜËœ\Ú
+Y\ÜØYÙJNÂˆKˆJNÂ‚ˆ\ÜÙ\™\]X[
+[š]X[^™YYJNÂˆ\ÜÙ\™\]X[
+\[ÙˆØÛÜK›Û›Y\ÜØYÙK™[˜İ[ÛˆŠNÂˆ\ÜÙ\™Y\\]X[
+XYÛ›ÜİXÜËÂˆÜ™X][™È™\İY˜\İ\”Ş[ÛÜšÙ\ˆ‹ˆ”[ÙYHØYY‹ˆ”]Ûˆ]]Üš[™ÈXÚØYÙHØYY‹ˆ’[š]X[^š[™È]Ûˆ]]Üš[™ÈÙ\ÜÚ[Ûˆ‹ˆ”]Ûˆ]]Üš[™ÈÙ\ÜÚ[Ûˆ[š]X[^™Y‹ˆJNÂˆİÜ
 
-  stop();
-  assert.equal(scope.onmessage, null);
-  assert.equal(freed, true);
-  assert.equal(closed, true);
-});
+NÂˆ\ÜÙ\™\]X[
+™\İYÛÜšÙ\•\›Z[˜]YYJNÂŸJNÂ‚\İ
+™›ÜØ\™ÈÛÜšÙ\ˆ›Ûİİ˜\XYÛ›ÜİXÜÈÚ]İ]™X][™È[H\È™\ÜÛœÙ\È‹
 
-test("starts the nested VapourSynth worker before installing the Python worker handler", async () => {
-  let nestedWorkerTerminated = false;
-  let initialized = false;
-  const scope = { postMessage() {} };
-  const stop = await startPyodideWorkerRuntime({
-    scope,
-    async loadPyodide() {
-      return {
-        registerJsModule() {},
-        unregisterJsModule() {},
-        async runPythonAsync() {
-          initialized = true;
-        },
-      };
-    },
-    createVapourSynthWorker() {
-      return {
-        postMessage() {},
-        terminate() {
-          nestedWorkerTerminated = true;
-        },
-      };
-    },
-    async loadPackageSource() {
-      return "import _vapoursynth_rpc";
-    },
-  });
+HOˆÂˆÛÛœİXYÛ›ÜİXÜÈH×NÂˆÛÛœİÛÜšÙ\ˆHÂˆÜİY\ÜØYÙJ
+HßKˆ\›Z[˜]J
+HßKˆNÂˆÛÛœİÛY[H™]È[ÙYUÛÜšÙ\ÛY[
+ÛÜšÙ\‹ÂˆÛ‘XYÛ›ÜİXÊXYÛ›ÜİXÊHÂˆXYÛ›ÜİXÜËœ\Ú
+XYÛ›ÜİXÊNÂˆKˆJNÂ‚ˆÛÜšÙ\‹›Û›Y\ÜØYÙJÂˆ]NˆÂˆØÚ[XU™\œÚ[ÛˆKˆ\Nˆ™XYÛ›ÜİXÈ‹ˆXYÛ›ÜİXÎˆÂˆ]™[ˆš[™›È‹ˆÛİ\˜ÙNˆÛÜšÙ\‹X›Ûİİ˜\‹ˆY\ÜØYÙNˆ”[ÙYHØYY‹ˆKˆKˆJNÂ‚ˆ\ÜÙ\™\]X[
+XYÛ›ÜİXÜË˜]
+LJK›Y\ÜØYÙK”[ÙYHØYYŠNÂˆ\ÜÙ\™\]X[
+XYÛ›ÜİXÜË˜]
+LJKœÛİ\˜ÙKÛÜšÙ\‹X›Ûİİ˜\ŠNÂˆÛY[˜ÛÜÙJ
+NÂŸJNÂ‚\İ
+šÛÈ]Ûˆ™\]Y\İÈ[[Hİ]\ˆÛÜšÙ\ˆ™XY[™\ÜÈ[™ÚZÙH‹\Ş[˜È
 
-  assert.equal(initialized, true);
-  assert.equal(typeof scope.onmessage, "function");
-  stop();
-  assert.equal(nestedWorkerTerminated, true);
-});
+HOˆÂˆÛÛœİÜİYH×NÂˆÛÛœİÛÜšÙ\ˆHÂˆÜİY\ÜØYÙJY\ÜØYÙJHÂˆÜİYœ\Ú
+Y\ÜØYÙJNÂˆKˆ\›Z[˜]J
+HßKˆNÂˆÛÛœİÛY[H™]È[ÙYUÛÜšÙ\ÛY[
+ÛÜšÙ\ŠNÂˆÛÛœİİ]\ÈHÛY[œİ]\Ê
+NÂ‚ˆ]ØZ]›ÛZ\ÙKœ™\ÛÛ™J
+NÂˆ\ÜÙ\™\]X[
+ÜİY›[™İ
+NÂ‚ˆÛÜšÙ\‹›Û›Y\ÜØYÙJÈ]NˆÈØÚ[XU™\œÚ[ÛˆK\Nˆœ™XYHˆHJNÂˆ]ØZ]›ÛZ\ÙKœ™\ÛÛ™J
+NÂˆ\ÜÙ\™\]X[
+ÜİY›[™İJNÂˆÛÜšÙ\‹›Û›Y\ÜØYÙJÂˆ]NˆÂˆØÚ[XU™\œÚ[ÛˆKˆ™\]Y\İYˆÜİYÌKœ™\]Y\İYˆÚÎˆYKˆ^[ØYˆÈ\İ™X[S[šÙYˆYHKˆKˆJNÂ‚ˆ\ÜÙ\™\]X[
+
+]ØZ]İ]\ÊK\İ™X[S[šÙYYJNÂˆÛY[˜ÛÜÙJ
+NÂŸJNÂ

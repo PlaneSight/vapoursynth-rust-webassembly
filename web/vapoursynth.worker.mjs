@@ -1,7 +1,20 @@
-import createModule from "./runtime/vapoursynth-browser-module.js";
 import { AuthoringSession } from "./authoring-session.mjs";
 import { EmscriptenSession } from "./emscripten-session.mjs";
 import { installWorkerRuntime } from "./worker-runtime.mjs";
 
-const module = await createModule();
-installWorkerRuntime(globalThis, new AuthoringSession(new EmscriptenSession(module)));
+try {
+  const { default: createModule } = await import("./runtime/vapoursynth-browser-module.js");
+  const module = await createModule();
+  installWorkerRuntime(globalThis, new AuthoringSession(new EmscriptenSession(module)));
+  globalThis.postMessage({ schemaVersion: 1, type: "ready" });
+} catch (error) {
+  globalThis.postMessage({
+    schemaVersion: 1,
+    type: "bootstrap-error",
+    error: {
+      code: "worker-bootstrap-error",
+      message: error?.message ?? "VapourSynth worker bootstrap failed",
+    },
+  });
+  throw error;
+}

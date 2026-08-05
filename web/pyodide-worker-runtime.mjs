@@ -45,6 +45,7 @@ export async function startPyodideWorkerRuntime({
   loadPyodide,
   createVapourSynthWorker,
   loadPackageSource,
+  onDiagnostic = () => {},
 }) {
   if (typeof loadPyodide !== "function") {
     throw new TypeError("loadPyodide must be a function");
@@ -55,19 +56,34 @@ export async function startPyodideWorkerRuntime({
   if (typeof loadPackageSource !== "function") {
     throw new TypeError("loadPackageSource must be a function");
   }
+  if (typeof onDiagnostic !== "function") {
+    throw new TypeError("onDiagnostic must be a function");
+  }
 
-  const worker = createVapourSynthWorker();
+  onDiagnostic("Creating nested VapourSynth worker");
+  const workerClient = new WorkerClient(createVapourSynthWorker());
   try {
-    const [pyodide, packageSource] = await Promise.all([loadPyodide(), loadPackageSource()]);
+    const [pyodide, packageSource] = await Promise.all([
+      loadPyodide().then((value) => {
+        onDiagnostic("Pyodide loaded");
+        return value;
+      }),
+      loadPackageSource().then((value) => {
+        onDiagnostic("Python authoring package loaded");
+        return value;
+      }),
+    ]);
+    onDiagnostic("Initializing Python authoring session");
     const session = new PyodideSession({
       pyodide,
-      workerClient: new WorkerClient(worker),
+      workerClient,
       packageSource,
     });
     await session.initialize();
+    onDiagnostic("Python authoring session initialized");
     return installPyodideWorkerRuntime(scope, session);
   } catch (error) {
-    worker?.terminate?.();
+    workerClient.close();
     throw error;
   }
 }

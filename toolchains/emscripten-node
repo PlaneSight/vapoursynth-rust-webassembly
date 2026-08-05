@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+program="${1:?expected an executable path}"
+shift
+
+case "$program" in
+    *.exe)
+        module="${program%.exe}.mjs"
+        cp "$program" "$module"
+        if node "$module" "$@"; then
+            status=0
+        else
+            status=$?
+        fi
+        rm -f "$module"
+        exit "$status"
+        ;;
+    *)
+        exec node "$program" "$@"
+        ;;
+esac

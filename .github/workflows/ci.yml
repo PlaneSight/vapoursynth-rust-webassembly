@@ -107,18 +107,8 @@ jobs:
         run: |
           source "$EMSDK/emsdk_env.sh"
           RUSTFLAGS=-Cpanic=abort cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
-      - name: Verify Emscripten sanity wrapper
-        run: |
-          source "$EMSDK/emsdk_env.sh"
-          mkdir -p build/browser/meson-private
-          printf 'int main(void) { int class_value = 0; return class_value; }\n' > build/browser/meson-private/sanitycheckcpp.cc
-          em++ build/browser/meson-private/sanitycheckcpp.cc -o build/browser/meson-private/sanitycheckcpp_cross.exe -D_FILE_OFFSET_BITS=64
-          file build/browser/meson-private/sanitycheckcpp_cross.exe
-          node build/browser/meson-private/sanitycheckcpp_cross.exe
       - name: Build upstream browser smoke
         run: |
           source "$EMSDK/emsdk_env.sh"
-          if ! tools/build-browser.sh; then
-            cat build/browser/meson-logs/meson-log.txt
-            exit 1
-          fi
+          bash toolchains/emscripten-node.test.sh
+          tools/build-browser.sh

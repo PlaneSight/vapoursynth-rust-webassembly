@@ -1,4 +1,4 @@
-export class WorkerClient {
+export class PyodideWorkerClient {
   #worker;
   #nextRequestId = 1;
   #pending = new Map();
@@ -10,47 +10,23 @@ export class WorkerClient {
 
     this.#worker = worker;
     worker.onmessage = ({ data }) => this.#settle(data);
-    worker.onerror = (event) => this.#failAll(new Error(event?.message ?? "worker failed"));
+    worker.onerror = (event) => this.#failAll(new Error(event?.message ?? "Pyodide worker failed"));
   }
 
   status() {
     return this.#request("status");
   }
 
-  renderBlankFrame(width, height) {
-    return this.#request("renderBlankFrame", { width, height });
-  }
-
-  createBlankClip(width, height, format = "RGB24", length = 1) {
-    return this.#request("createBlankClip", { width, height, format, length });
-  }
-
-  invert(nodeId) {
-    return this.#request("invert", { nodeId });
-  }
-
-  setOutput(index, nodeId) {
-    return this.#request("setOutput", { index, nodeId });
-  }
-
-  listOutputs() {
-    return this.#request("listOutputs");
+  runScript(source, filename = "script.vpy") {
+    return this.#request("runScript", { source, filename });
   }
 
   renderOutput(index, frame = 0) {
     return this.#request("renderOutput", { index, frame });
   }
 
-  releaseNode(nodeId) {
-    return this.#request("releaseNode", { nodeId });
-  }
-
-  resetGraph() {
-    return this.#request("resetGraph");
-  }
-
   close() {
-    this.#failAll(new Error("worker client closed"));
+    this.#failAll(new Error("Pyodide worker client closed"));
     this.#worker.terminate?.();
   }
 
@@ -59,7 +35,6 @@ export class WorkerClient {
     const promise = new Promise((resolve, reject) => {
       this.#pending.set(requestId, { resolve, reject });
     });
-
     this.#worker.postMessage({ schemaVersion: 1, requestId, type, ...payload });
     return promise;
   }
@@ -72,7 +47,7 @@ export class WorkerClient {
 
   #settle(message) {
     if (!message || message.schemaVersion !== 1 || !Number.isInteger(message.requestId)) {
-      this.#failAll(new Error("worker returned an invalid response envelope"));
+      this.#failAll(new Error("Pyodide worker returned an invalid response envelope"));
       return;
     }
 
@@ -80,14 +55,13 @@ export class WorkerClient {
     if (!pending) {
       return;
     }
-
     this.#pending.delete(message.requestId);
     if (message.ok) {
       pending.resolve(message.payload);
       return;
     }
 
-    const error = new Error(message.error?.message ?? "worker request failed");
+    const error = new Error(message.error?.message ?? "Pyodide worker request failed");
     error.code = message.error?.code ?? "worker-error";
     pending.reject(error);
   }
@@ -98,20 +72,4 @@ export class WorkerClient {
     }
     this.#pending.clear();
   }
-}
-
-export function drawRgbaFrame(canvas, frame) {
-  if (!(frame?.rgba instanceof ArrayBuffer)) {
-    throw new TypeError("frame.rgba must be an ArrayBuffer");
-  }
-
-  const context = canvas?.getContext?.("2d");
-  if (!context) {
-    throw new TypeError("canvas must provide a 2D context");
-  }
-
-  canvas.width = frame.width;
-  canvas.height = frame.height;
-  const pixels = new Uint8ClampedArray(frame.rgba);
-  context.putImageData(new ImageData(pixels, frame.width, frame.height), 0, 0);
 }

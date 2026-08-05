@@ -8,3 +8,10 @@ remote = "https://github.com/vapoursynth/vapoursynth.git"
 commit = "37eed3ddbdb61e92975d9a4b054a488e93fc9a1c"
 license = "LGPL-2.1-or-later"
 patches = ["patches/vapoursynth/0001-static-browser-spike.patch"]
+
+[dependencies.pyodide]
+version = "0.29.4"
+remote = "https://github.com/pyodide/pyodide.git"
+distribution = "https://cdn.jsdelivr.net/pyodide/v0.29.4/full/"
+license = "MPL-2.0"
+purpose = "worker-local Python authoring runtime"

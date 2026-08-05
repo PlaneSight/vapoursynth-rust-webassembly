@@ -27,6 +27,47 @@ export function createWorkerHandler(session) {
           response.transfer.push(rgba.buffer);
           return response;
         }
+        case "createBlankClip":
+          return success(
+            request.requestId,
+            "node",
+            await callSession(session, "create_blank_clip", request),
+          );
+        case "invert":
+          return success(
+            request.requestId,
+            "node",
+            await callSession(session, "invert", request),
+          );
+        case "setOutput":
+          return success(
+            request.requestId,
+            "output",
+            await callSession(session, "set_output", request),
+          );
+        case "listOutputs":
+          return success(
+            request.requestId,
+            "outputs",
+            await callSession(session, "list_outputs", request),
+          );
+        case "renderOutput": {
+          const frame = await callSession(session, "render_output", request);
+          const rgba = normalizeBytes(frame?.rgba);
+          const response = success(request.requestId, "frame", {
+            width: requireDimension(frame?.width, request.requestId, "runtime frame width"),
+            height: requireDimension(frame?.height, request.requestId, "runtime frame height"),
+            rgba: rgba.buffer,
+          });
+          response.transfer.push(rgba.buffer);
+          return response;
+        }
+        case "releaseNode":
+          await callSession(session, "release_node", request);
+          return success(request.requestId, "released", {});
+        case "resetGraph":
+          await callSession(session, "reset_graph", request);
+          return success(request.requestId, "reset", {});
         default:
           throw protocolError(request.requestId, "unsupported-request", `unsupported request type: ${request.type}`);
       }
@@ -50,16 +91,47 @@ function validateRequest(message) {
     throw protocolError(requestId, "invalid-request", "type must be a non-empty string");
   }
 
-  if (message.type !== "renderBlankFrame") {
-    return { requestId, type: message.type };
+  switch (message.type) {
+    case "renderBlankFrame":
+      return {
+        requestId,
+        type: message.type,
+        width: requireDimension(message.width, requestId, "width"),
+        height: requireDimension(message.height, requestId, "height"),
+      };
+    case "createBlankClip":
+      return {
+        requestId,
+        type: message.type,
+        width: requireDimension(message.width, requestId, "width"),
+        height: requireDimension(message.height, requestId, "height"),
+        format: requireFormat(message.format, requestId),
+        length: requireLength(message.length, requestId),
+      };
+    case "invert":
+    case "releaseNode":
+      return {
+        requestId,
+        type: message.type,
+        nodeId: requireNodeId(message.nodeId, requestId),
+      };
+    case "setOutput":
+      return {
+        requestId,
+        type: message.type,
+        index: requireOutputIndex(message.index, requestId),
+        nodeId: requireNodeId(message.nodeId, requestId),
+      };
+    case "renderOutput":
+      return {
+        requestId,
+        type: message.type,
+        index: requireOutputIndex(message.index, requestId),
+        frame: requireOutputIndex(message.frame, requestId),
+      };
+    default:
+      return { requestId, type: message.type };
   }
-
-  return {
-    requestId,
-    type: message.type,
-    width: requireDimension(message.width, requestId, "width"),
-    height: requireDimension(message.height, requestId, "height"),
-  };
 }
 
 function requireDimension(value, requestId, name) {
@@ -67,6 +139,62 @@ function requireDimension(value, requestId, name) {
     throw protocolError(requestId, "invalid-dimensions", `${name} must be a non-zero u32`);
   }
   return value;
+}
+
+function requireFormat(value, requestId) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 64) {
+    throw protocolError(requestId, "invalid-format", "format must be a non-empty string no longer than 64 characters");
+  }
+  return value;
+}
+
+function requireLength(value, requestId) {
+  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
+    throw protocolError(requestId, "invalid-length", "length must be a non-zero u32");
+  }
+  return value;
+}
+
+function requireNodeId(value, requestId) {
+  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
+    throw protocolError(requestId, "invalid-node", "nodeId must be a non-zero u32");
+  }
+  return value;
+}
+
+function requireOutputIndex(value, requestId) {
+  if (!Number.isInteger(value) || value < 0 || value > 0xffff_ffff) {
+    throw protocolError(requestId, "invalid-output", "output index must be a u32");
+  }
+  return value;
+}
+
+async function callSession(session, methodName, request) {
+  const method = session[methodName];
+  if (typeof method !== "function") {
+    throw protocolError(
+      request.requestId,
+      "unsupported-request",
+      `the worker runtime does not implement ${request.type}`,
+    );
+  }
+
+  switch (request.type) {
+    case "createBlankClip":
+      return method.call(session, request.requestId, request.width, request.height, request.format, request.length);
+    case "invert":
+    case "releaseNode":
+      return method.call(session, request.requestId, request.nodeId);
+    case "setOutput":
+      return method.call(session, request.requestId, request.index, request.nodeId);
+    case "listOutputs":
+    case "resetGraph":
+      return method.call(session, request.requestId);
+    case "renderOutput":
+      return method.call(session, request.requestId, request.index, request.frame);
+    default:
+      throw protocolError(request.requestId, "unsupported-request", `unsupported request type: ${request.type}`);
+  }
 }
 
 function normalizeBytes(value) {

@@ -19,6 +19,8 @@ main-thread WorkerClient
 
 Rust owns only thread-affine `(slot, generation)` tokens; C++ retains the `VSAPI` table and every actual upstream pointer. Raw VapourSynth pointers never cross the Rust, worker, or JavaScript boundaries.
 
+**Milestone 3 is a build candidate.** A second dedicated worker loads pinned Pyodide and installs a deliberately small asynchronous `vapoursynth` package. Python graph values contain opaque worker tokens only; the nested VapourSynth worker remains the sole owner of the Emscripten module and every upstream resource.
+
 See [the build-spike record](docs/build-spike.md), [the implementation plan](docs/plan.md), and [the support matrix](docs/porting-status.md).
 
 ## What the current runtime proves
@@ -62,10 +64,25 @@ tools/build-browser.sh
 
 The script applies the locked upstream patch, configures `build/browser`, builds the direct C++ smoke, safe Rust smoke, and worker-owned ES module, then runs their Node tests. Open `web/index.html` through a local HTTP server after building to exercise the minimal canvas harness.
 
+## Authoring a `.vpy`
+
+The canvas demo starts a Pyodide worker, which starts the separate VapourSynth worker. Pyodide 0.29.4 is loaded from the pinned CDN URL by default; deployments can self-host a compatible distribution by providing another `indexURL` to `loadBrowserPyodide()`.
+
+Authoring operations are intentionally asynchronous because every graph request crosses from the Python worker to the VapourSynth worker:
+
+```python
+import vapoursynth as vs
+
+blank = await vs.core.std.BlankClip(width=320, height=180, format=vs.RGB24)
+inverted = await vs.core.std.Invert(blank)
+await vs.set_output(0, inverted)
+```
+
+The current supported subset is exactly `vs.RGB24`, `vs.core.std.BlankClip`, `vs.core.std.Invert`, `VideoNode`, and `vs.set_output()`. It renders only a one-frame `BlankClip → Invert` graph. Other namespaces, formats, frame counts, graph shapes, and APIs raise a specific unsupported error rather than falling back to an imitation.
+
 ## Non-goals of this milestone
 
 - General plugin/function invocation maps.
-- Pyodide or `.vpy` execution.
 - Dynamic plugin discovery or native plugin binaries.
 - `std.Resize` and its `zimg` dependency.
 - Real video decoding or encoding.

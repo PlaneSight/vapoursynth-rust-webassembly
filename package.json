@@ -1,0 +1,12 @@
+{
+  "name": "vapoursynth-rust-webassembly",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:web": "node --test web/*.test.mjs",
+    "test:python": "python -m unittest discover -s web/python -p test_*.py"
+  },
+  "devDependencies": {
+    "pyodide": "0.29.4"
+  }
+}

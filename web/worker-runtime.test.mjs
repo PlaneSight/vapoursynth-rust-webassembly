@@ -66,6 +66,16 @@ test("correlates concurrent client requests", async () => {
   client.close();
 });
 
+test("correlates malformed client requests so they reject instead of hanging", async () => {
+  const client = new WorkerClient(linkedWorker());
+
+  await assert.rejects(
+    () => client.renderBlankFrame(0, 1),
+    (error) => error.code === "invalid-dimensions",
+  );
+  client.close();
+});
+
 test("releases the worker-owned session during shutdown", () => {
   let freed = false;
   let closed = false;

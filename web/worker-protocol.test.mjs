@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { AuthoringSession } from "./authoring-session.mjs";
 import { createWorkerHandler } from "./worker-protocol.mjs";
 
 function fakeSession(overrides = {}) {
@@ -122,4 +123,46 @@ test("rejects unsupported request types deterministically", async () => {
       message: "unsupported request type: openVideo",
     },
   });
+});
+
+test("moves opaque authoring nodes through the worker protocol", async () => {
+  const handle = createWorkerHandler(new AuthoringSession(fakeSession()));
+  const blank = await handle({
+    requestId: 20,
+    type: "createBlankClip",
+    width: 3,
+    height: 2,
+    format: "RGB24",
+    length: 1,
+  });
+  const inverted = await handle({
+    requestId: 21,
+    type: "invert",
+    nodeId: blank.message.payload.nodeId,
+  });
+  const output = await handle({
+    requestId: 22,
+    type: "setOutput",
+    index: 0,
+    nodeId: inverted.message.payload.nodeId,
+  });
+  const frame = await handle({
+    requestId: 23,
+    type: "renderOutput",
+    index: 0,
+    frame: 0,
+  });
+
+  assert.equal(blank.message.type, "node");
+  assert.equal(inverted.message.type, "node");
+  assert.deepEqual(output.message.payload, {
+    index: 0,
+    width: 3,
+    height: 2,
+    format: "RGB24",
+    length: 1,
+  });
+  assert.equal(frame.message.type, "frame");
+  assert.equal(frame.message.payload.rgba.byteLength, 24);
+  assert.deepEqual(frame.transfer, [frame.message.payload.rgba]);
 });

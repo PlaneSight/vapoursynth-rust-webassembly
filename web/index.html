@@ -11,14 +11,23 @@
       canvas { width: 100%; aspect-ratio: 16 / 9; background: #111; image-rendering: pixelated; }
       footer { display: flex; align-items: center; gap: 1rem; }
       output { flex: 1; }
+      textarea { min-height: 12rem; resize: vertical; font: 0.875rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
     </style>
   </head>
   <body>
     <main>
       <h1>VapourSynth WebAssembly</h1>
       <canvas width="320" height="180"></canvas>
+      <label>
+        <span>Authoring script (.vpy)</span>
+        <textarea spellcheck="false">import vapoursynth as vs
+
+blank = await vs.core.std.BlankClip(width=320, height=180, format=vs.RGB24)
+inverted = await vs.core.std.Invert(blank)
+await vs.set_output(0, inverted)</textarea>
+      </label>
       <footer>
-        <button type="button" disabled>Render upstream frame</button>
+        <button type="button" disabled>Run .vpy</button>
         <output>Starting worker…</output>
       </footer>
     </main>

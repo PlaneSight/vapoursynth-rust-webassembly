@@ -1,4 +1,4 @@
-# Deploy the browser demo to GitHub Pages
+# Build and deploy the browser demo to GitHub Pages
 name: Deploy browser demo to Pages
 
 on:
@@ -15,15 +15,59 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  RUST_VERSION: 1.85.0
+  EMSCRIPTEN_VERSION: 3.1.68
+
 jobs:
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RUSTUP_TOOLCHAIN: 1.85.0
+      EMSDK: ${{ github.workspace }}/.ci/emsdk
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.1"
+          enable-cache: true
+      - name: Sync UV tools
+        run: uv sync --locked
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: wasm32-unknown-emscripten
+      - name: Restore Emscripten SDK
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: .ci/emsdk
+          key: pages-emscripten-${{ runner.os }}-${{ env.EMSCRIPTEN_VERSION }}
+      - name: Install Emscripten
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$(dirname "$EMSDK")"
+          git clone --branch "$EMSCRIPTEN_VERSION" --depth 1 https://github.com/emscripten-core/emsdk.git "$EMSDK"
+          "$EMSDK/emsdk" install "$EMSCRIPTEN_VERSION"
+      - name: Activate Emscripten
+        run: |
+          "$EMSDK/emsdk" activate "$EMSCRIPTEN_VERSION"
+          echo "$EMSDK/upstream/emscripten" >> "$GITHUB_PATH"
+      - name: Build deployable browser runtime
+        run: |
+          source "$EMSDK/emsdk_env.sh"
+          uv run --locked bash tools/build-browser.sh
+          test -f web/runtime/vapoursynth-browser-module.js
+          test -f web/runtime/vapoursynth-browser-module.wasm
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload browser demo

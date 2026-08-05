@@ -29,7 +29,7 @@ window.addEventListener("unhandledrejection", (event) => {
   });
 });
 
-const workerUrl = new URL("../runtime/pyodide/worker.mjs", import.meta.url);
+const workerUrl = new URL("../runtime/pyodide/bootstrap.mjs", import.meta.url);
 diagnostics.info("bootstrap", `Creating module worker: ${workerUrl.href}`);
 const worker = new Worker(workerUrl, { type: "module" });
 const client = new PyodideWorkerClient(worker, { onDiagnostic: diagnostics.write });

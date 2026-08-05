@@ -1,43 +1,89 @@
-import { loadVapourSynthPackageSource } from "./package.mjs";
-import { loadBrowserPyodide } from "./loader.mjs";
-import { startPyodideWorkerRuntime } from "./worker-runtime.mjs";
+import { PyodideSession } from "./session.mjs";
+import { WorkerClient } from "../vapoursynth/client.mjs";
+import { createPyodideWorkerHandler } from "../../protocol/pyodide.mjs";
 
-function reportBootstrap(message, { level = "info", detail } = {}) {
-  globalThis.postMessage({
-    schemaVersion: 1,
-    type: "diagnostic",
-    diagnostic: {
-      level,
-      source: "worker-bootstrap",
-      message,
-      detail,
-    },
-  });
+export function installPyodideWorkerRuntime(scope, session) {
+  if (!scope || typeof scope.postMessage !== "function") {
+    throw new TypeError("scope must provide postMessage()");
+  }
+
+  const handle = createPyodideWorkerHandler(session);
+  scope.onmessage = async ({ data }) => {
+    let response;
+    try {
+      response = await handle(data);
+    } catch (error) {
+      response = {
+        message: {
+          schemaVersion: 1,
+          requestId: error?.requestId ?? 0,
+          ok: false,
+          error: {
+            code: error?.code ?? "invalid-request",
+            message: error?.message ?? "invalid Python worker request",
+          },
+        },
+        transfer: [],
+      };
+    }
+    scope.postMessage(response.message, response.transfer);
+  };
+
+  return () => {
+    scope.onmessage = null;
+    session.free?.();
+    scope.close?.();
+  };
 }
 
-reportBootstrap("Pyodide worker module started");
-try {
-  await startPyodideWorkerRuntime({
-    scope: globalThis,
-    loadPyodide: loadBrowserPyodide,
-    createVapourSynthWorker: () => new Worker(new URL("../vapoursynth/worker.mjs", import.meta.url), { type: "module" }),
-    loadPackageSource: loadVapourSynthPackageSource,
-    onDiagnostic: reportBootstrap,
-  });
-  reportBootstrap("Pyodide worker ready");
-  globalThis.postMessage({ schemaVersion: 1, type: "ready" });
-} catch (error) {
-  reportBootstrap(error?.message ?? "Pyodide worker bootstrap failed", {
-    level: "error",
-    detail: error?.stack,
-  });
-  globalThis.postMessage({
-    schemaVersion: 1,
-    type: "bootstrap-error",
-    error: {
-      code: "worker-bootstrap-error",
-      message: error?.message ?? "Pyodide worker bootstrap failed",
-    },
-  });
-  throw error;
+/**
+ * Starts the two-worker runtime. Pyodide owns scripts and an ordinary
+ * WorkerClient; the nested VapourSynth worker alone owns upstream resources.
+ */
+export async function startPyodideWorkerRuntime({
+  scope = globalThis,
+  loadPyodide,
+  createVapourSynthWorker,
+  loadPackageSource,
+  onDiagnostic = () => {},
+}) {
+  if (typeof loadPyodide !== "function") {
+    throw new TypeError("loadPyodide must be a function");
+  }
+  if (typeof createVapourSynthWorker !== "function") {
+    throw new TypeError("createVapourSynthWorker must be a function");
+  }
+  if (typeof loadPackageSource !== "function") {
+    throw new TypeError("loadPackageSource must be a function");
+  }
+  if (typeof onDiagnostic !== "function") {
+    throw new TypeError("onDiagnostic must be a function");
+  }
+
+  onDiagnostic("Creating nested VapourSynth worker");
+  const workerClient = new WorkerClient(createVapourSynthWorker());
+  try {
+    const [pyodide, packageSource] = await Promise.all([
+      loadPyodide().then((value) => {
+        onDiagnostic("Pyodide loaded");
+        return value;
+      }),
+      loadPackageSource().then((value) => {
+        onDiagnostic("Python authoring package loaded");
+        return value;
+      }),
+    ]);
+    onDiagnostic("Initializing Python authoring session");
+    const session = new PyodideSession({
+      pyodide,
+      workerClient,
+      packageSource,
+    });
+    await session.initialize();
+    onDiagnostic("Python authoring session initialized");
+    return installPyodideWorkerRuntime(scope, session);
+  } catch (error) {
+    workerClient.close();
+    throw error;
+  }
 }

@@ -66,14 +66,14 @@ jobs:
         run: |
           source "$EMSDK/emsdk_env.sh"
           bash tools/build-browser.sh
-          test -f web/runtime/vapoursynth-browser-module.js
-          test -f web/runtime/vapoursynth-browser-module.wasm
+          test -f build/web/runtime/vapoursynth-browser-module.js
+          test -f build/web/runtime/vapoursynth-browser-module.wasm
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload browser demo
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "./web"
+          path: "./build/web"
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

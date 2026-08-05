@@ -5,7 +5,7 @@ This document is the source of truth for support claims. Evidence refers to the 
 | Area | Status | Evidence |
 |---|---|---|
 | Raw VapourSynth ABI | Deliberately private | C++ owns the versioned `VSAPI` table and every raw upstream pointer. |
-| Upstream core build | Linked | The `browser-integration` job builds and passes the direct Node smoke from `native/tests/render_invert.cpp`. |
+| Upstream core build | Linked | The `browser-integration` job builds and passes the direct Node render-invert test from `native/tests/render_invert.cpp`. |
 | Standard plugin | Limited linked | Static `std` registration contains the code required for `BlankClip` and `Invert`, not the full plugin set. |
 | `BlankClip → Invert → RGBA` | Linked | `native/tests/render_invert.cpp` checks every pixel derived from an upstream `VSFrame`. |
 | Rust-to-upstream ownership FFI | Linked | The `browser-integration` job exercises the generation-checked Rust `Core → Node → Frame` path through the C++ bridge. |

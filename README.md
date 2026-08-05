@@ -18,7 +18,7 @@ uv sync --locked
 npm run serve
 ```
 
-Open `http://localhost:4173/web/app/index.html` (HTTP is required for ES modules and nested workers). The build applies the pinned upstream patch, compiles the Emscripten module, and runs the smoke tests; generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
+Open `http://localhost:4173/web/app/index.html` (HTTP is required for ES modules and nested workers). The build applies the pinned upstream patch, compiles the Emscripten module, and runs the render-invert tests; generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
 
 ## Architecture
 

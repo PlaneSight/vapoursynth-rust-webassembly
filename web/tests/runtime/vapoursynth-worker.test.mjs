@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { WorkerClient } from "../../runtime/vapoursynth/client.mjs";
-import { installWorkerRuntime, startWorkerRuntime } from "../../runtime/vapoursynth/worker-runtime.mjs";
+import { installWorkerRuntime, startWorkerRuntime } from "../../runtime/vapoursynth/worker.mjs";
 
 function session() {
   return {

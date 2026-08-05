@@ -1,20 +1,51 @@
-import { AuthoringSession } from "./session.mjs";
-import { EmscriptenSession } from "../emscripten/session.mjs";
-import { installWorkerRuntime } from "./worker-runtime.mjs";
+import { createWorkerHandler } from "../../protocol/vapoursynth.mjs";
 
-try {
-  const { default: createModule } = await import("../vapoursynth-browser-module.js");
-  const module = await createModule();
-  installWorkerRuntime(globalThis, new AuthoringSession(new EmscriptenSession(module)));
-  globalThis.postMessage({ schemaVersion: 1, type: "ready" });
-} catch (error) {
-  globalThis.postMessage({
-    schemaVersion: 1,
-    type: "bootstrap-error",
-    error: {
-      code: "worker-bootstrap-error",
-      message: error?.message ?? "VapourSynth worker bootstrap failed",
-    },
-  });
-  throw error;
+export function installWorkerRuntime(scope, session) {
+  if (!scope || typeof scope.postMessage !== "function") {
+    throw new TypeError("scope must provide postMessage()");
+  }
+
+  const handle = createWorkerHandler(session);
+
+  scope.onmessage = async ({ data }) => {
+    let response;
+    try {
+      response = await handle(data);
+    } catch (error) {
+      response = {
+        message: {
+          schemaVersion: 1,
+          requestId: error?.requestId ?? 0,
+          ok: false,
+          error: {
+            code: error?.code ?? "invalid-request",
+            message: error?.message ?? "invalid worker request",
+          },
+        },
+        transfer: [],
+      };
+    }
+
+    scope.postMessage(response.message, response.transfer);
+  };
+
+  return () => {
+    scope.onmessage = null;
+    session.free?.();
+    scope.close?.();
+  };
+}
+
+export async function startWorkerRuntime({ scope = globalThis, loadHost }) {
+  if (typeof loadHost !== "function") {
+    throw new TypeError("loadHost must be a function");
+  }
+
+  const host = await loadHost();
+  if (!host || typeof host.WorkerSession !== "function") {
+    throw new TypeError("host module must export WorkerSession");
+  }
+
+  const session = new host.WorkerSession();
+  return installWorkerRuntime(scope, session);
 }

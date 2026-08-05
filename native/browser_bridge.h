@@ -103,7 +103,7 @@ VS_BROWSER_EXPORT vs_browser_status vs_browser_frame_rgba8_size(
 
 /// Copies a retained RGB24 frame into caller-owned RGBA8 storage.
 ///
-/// Frames whose RGBA8 output exceeds the 16 MiB browser-spike budget are
+/// Frames whose RGBA8 output exceeds the 16 MiB browser render budget are
 /// rejected. The bridge retains neither the output pointer nor its bytes.
 VS_BROWSER_EXPORT vs_browser_status vs_browser_frame_copy_rgba8(
     uint32_t slot,
@@ -117,7 +117,7 @@ VS_BROWSER_EXPORT vs_browser_status vs_browser_frame_release(
     uint32_t generation) VS_BROWSER_NOEXCEPT;
 
 /// Renders an inverted black RGB24 VapourSynth frame into caller-owned RGBA8 storage.
-/// Frames whose RGBA8 output exceeds the 16 MiB spike budget are rejected.
+/// Frames whose RGBA8 output exceeds the 16 MiB browser render budget are rejected.
 VS_BROWSER_EXPORT vs_browser_status vs_browser_render_inverted_blank(
     uint32_t width,
     uint32_t height,

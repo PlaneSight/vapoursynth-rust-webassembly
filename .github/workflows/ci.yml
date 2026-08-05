@@ -107,6 +107,12 @@ jobs:
         run: |
           source "$EMSDK/emsdk_env.sh"
           RUSTFLAGS=-Cpanic=abort cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
+      - name: Verify Emscripten executable wrapper
+        run: |
+          source "$EMSDK/emsdk_env.sh"
+          printf 'int main(void) { return 0; }\n' > /tmp/emscripten-wrapper-probe.cc
+          em++ /tmp/emscripten-wrapper-probe.cc -o /tmp/emscripten-wrapper-probe.exe
+          toolchains/emscripten-node /tmp/emscripten-wrapper-probe.exe
       - name: Build upstream browser smoke
         run: |
           source "$EMSDK/emsdk_env.sh"

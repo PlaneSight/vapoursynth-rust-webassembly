@@ -6,9 +6,10 @@ temp_dir="$(mktemp -d '.tmp.XXXXXX')"
 trap 'rm -rf "$temp_dir"' EXIT
 
 cat > "$temp_dir/sanity.exe" <<'EOF'
-const { writeFileSync } = require('node:fs');
-writeFileSync(process.argv[2], 'ok');
+const { readFileSync, writeFileSync } = require('node:fs');
+writeFileSync('result', readFileSync('asset.txt', 'utf8'));
 EOF
 
-"$wrapper" "$temp_dir/sanity.exe" "$temp_dir/result"
+printf 'ok' > "$temp_dir/asset.txt"
+"$wrapper" "$temp_dir/sanity.exe"
 test "$(<"$temp_dir/result")" = ok

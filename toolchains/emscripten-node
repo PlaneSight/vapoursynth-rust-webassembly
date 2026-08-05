@@ -9,8 +9,5 @@ case "$program" in
     *) program="$PWD/$program" ;;
 esac
 
-if command -v cygpath >/dev/null; then
-    program="$(cygpath -w "$program")"
-fi
-
-exec node -e 'require(process.argv[1])' "$program" "$@"
+cd "$(dirname "$program")"
+exec node -e 'require(process.argv[1])' "./$(basename "$program")" "$@"

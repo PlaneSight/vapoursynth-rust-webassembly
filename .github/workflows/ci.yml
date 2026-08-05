@@ -31,8 +31,8 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test Rust workspace
         run: cargo test --locked --workspace
-      - name: Test worker protocol
-        run: node --test web/worker-protocol.test.mjs
+      - name: Test worker runtime
+        run: node --test web/*.test.mjs
       - name: Compile isolated wasm-bindgen scaffold
         run: cargo check --locked -p vapoursynth-wasm-host --target wasm32-unknown-unknown
 

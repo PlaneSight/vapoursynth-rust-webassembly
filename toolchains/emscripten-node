@@ -5,18 +5,12 @@ program="${1:?expected an executable path}"
 shift
 
 case "$program" in
-    *.exe)
-        module="${program%.exe}.mjs"
-        cp "$program" "$module"
-        if node "$module" "$@"; then
-            status=0
-        else
-            status=$?
-        fi
-        rm -f "$module"
-        exit "$status"
-        ;;
-    *)
-        exec node "$program" "$@"
-        ;;
+    /*) ;;
+    *) program="$PWD/$program" ;;
 esac
+
+if command -v cygpath >/dev/null; then
+    program="$(cygpath -w "$program")"
+fi
+
+exec node -e 'require(process.argv[1])' "$program" "$@"

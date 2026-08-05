@@ -6,7 +6,7 @@ temp_dir="$(mktemp -d '.tmp.XXXXXX')"
 trap 'rm -rf "$temp_dir"' EXIT
 
 cat > "$temp_dir/sanity.exe" <<'EOF'
-import { writeFileSync } from 'node:fs';
+const { writeFileSync } = require('node:fs');
 writeFileSync(process.argv[2], 'ok');
 EOF
 

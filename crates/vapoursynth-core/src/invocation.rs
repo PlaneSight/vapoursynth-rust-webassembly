@@ -5,7 +5,7 @@
 //! fixed-width representation. Node arguments will be added alongside the
 //! generic invocation bridge so resource ownership remains explicit.
 
-/// A validated VapourSynth map key.
+/// A validated `VapourSynth` map key.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Key<'a>(&'a [u8]);
 
@@ -34,9 +34,9 @@ impl<'a> Key<'a> {
 /// A scalar value accepted by the first generic invocation slice.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value {
-    /// A signed VapourSynth integer value.
+    /// A signed `VapourSynth` integer value.
     Int(i64),
-    /// A VapourSynth floating-point value.
+    /// A `VapourSynth` floating-point value.
     Float(f64),
 }
 
@@ -147,9 +147,7 @@ impl<'a, const N: usize> Arguments<'a, N> {
 
     /// Iterates over initialized arguments in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = Argument<'a>> + '_ {
-        self.entries[..self.len]
-            .iter()
-            .map(|entry| entry.expect("initialized argument prefix must contain values"))
+        self.entries[..self.len].iter().copied().flatten()
     }
 }
 
@@ -173,7 +171,9 @@ mod tests {
     #[test]
     fn preserves_typed_values_in_order() {
         let mut arguments = Arguments::<2>::new();
-        arguments.push(Argument::int(b"width", 37).unwrap()).unwrap();
+        arguments
+            .push(Argument::int(b"width", 37).unwrap())
+            .unwrap();
         arguments
             .push(Argument::float(b"scale", 1.5).unwrap())
             .unwrap();
@@ -186,7 +186,9 @@ mod tests {
     #[test]
     fn rejects_duplicates_and_capacity_overflow() {
         let mut arguments = Arguments::<1>::new();
-        arguments.push(Argument::int(b"width", 37).unwrap()).unwrap();
+        arguments
+            .push(Argument::int(b"width", 37).unwrap())
+            .unwrap();
         assert_eq!(
             arguments.push(Argument::int(b"width", 38).unwrap()),
             Err(ArgumentError::DuplicateKey)

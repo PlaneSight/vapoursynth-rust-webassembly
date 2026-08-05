@@ -12,3 +12,8 @@ else
 fi
 uv run --locked meson compile -C build/browser
 uv run --locked meson test -C build/browser --print-errorlogs
+
+runtime_dir="web/runtime"
+mkdir -p "$runtime_dir"
+cp build/browser/native/vapoursynth-browser-module.js "$runtime_dir/"
+cp build/browser/native/vapoursynth-browser-module.wasm "$runtime_dir/"

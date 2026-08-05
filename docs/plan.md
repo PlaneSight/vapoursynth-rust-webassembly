@@ -53,7 +53,7 @@ Exit criteria:
 
 ## Milestone 1b.1 — Safe upstream ownership layer
 
-**Status:** source candidate; this change requires the next browser-spike pass.
+**Status:** verified by the `browser-spike` CI job on 2026-08-05.
 
 Replace the probe with an opaque C++ handle ABI and safe Rust `Core`, `Node`, and `Frame` wrappers. C++ retains ownership of the versioned `VSAPI` table; Rust owns only generation-checked bridge tokens with matching drops. Do not expose a raw `VSCore *`, `VSNode *`, `VSFrame *`, map, callback, or error-string pointer across the language boundary.
 
@@ -66,20 +66,30 @@ Exit criteria:
 
 ## Milestone 1c — Browser worker and canvas
 
-**Status:** worker protocol candidate; the Emscripten module adapter and browser harness remain.
+**Status:** verified by CI on 2026-08-05.
 
-Add a dedicated worker, transferable frame buffers, minimal canvas presentation, and an explicit request protocol. The worker is the only JavaScript-facing owner of the Emscripten module; messages contain request identifiers, data, and structured errors rather than native pointers.
+A dedicated module worker is now the sole JavaScript-facing owner of an ES-module Emscripten artifact. The worker exposes a versioned request protocol, correlates every command and response with a non-zero request identifier, transfers RGBA8 `ArrayBuffer` values, normalizes structured failures, and releases its session deterministically during shutdown.
 
-The isolated `vapoursynth-wasm-host` crate now defines a stateful `WorkerSession`, non-zero request identifiers, versioned capability records, deterministic dimension validation, and structured failures. It deliberately reports `upstreamLinked: false`: the `wasm32-unknown-unknown` protocol crate is not the Emscripten runtime and must not imply otherwise.
+Verified runtime path:
 
-Next slice:
+```text
+main-thread WorkerClient
+→ dedicated module worker
+→ EmscriptenSession
+→ safe Rust Core / Node / Frame
+→ C++ opaque-handle bridge
+→ upstream VapourSynth
+→ transferable RGBA8 ArrayBuffer
+→ canvas
+```
 
-1. Export the Emscripten module as an ES module suitable for a dedicated module worker.
-2. Add a small worker adapter that creates exactly one runtime and one `WorkerSession`.
-3. Correlate every command and response with a non-zero request identifier.
-4. Transfer completed RGBA8 `ArrayBuffer` values rather than copying them through structured cloning.
-5. Add a browser smoke that renders the verified 37×19 white frame onto a canvas.
-6. Prove worker shutdown releases frames, nodes, then the core without stale callbacks.
+The browser-spike job builds and executes three independent proofs:
+
+1. Direct C++ opaque-handle rendering.
+2. Safe Rust ownership through the C++ bridge.
+3. ES-module initialization and the exported Rust render path under Node.
+
+The ES-module smoke verifies the same deterministic 37×19 opaque-white frame as the earlier upstream tests. Focused Node tests cover protocol validation, concurrent request correlation, transfer lists, Emscripten memory ownership, structured error translation, and shutdown.
 
 ## Milestone 2 — Invocation and graph semantics
 

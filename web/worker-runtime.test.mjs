@@ -16,7 +16,16 @@ function session() {
 }
 
 function linkedWorker() {
-  const main = {};
+  let onmessage;
+  const main = {
+    get onmessage() {
+      return onmessage;
+    },
+    set onmessage(handler) {
+      onmessage = handler;
+      queueMicrotask(() => handler({ data: { schemaVersion: 1, type: "ready" } }));
+    },
+  };
   const workerScope = {
     postMessage(data) {
       queueMicrotask(() => main.onmessage?.({ data }));
@@ -63,6 +72,36 @@ test("correlates concurrent client requests", async () => {
   assert.equal(frame.width, 2);
   assert.equal(frame.height, 2);
   assert.equal(frame.rgba.byteLength, 16);
+  client.close();
+});
+
+test("holds requests until the worker readiness handshake", async () => {
+  const posted = [];
+  const worker = {
+    postMessage(message) {
+      posted.push(message);
+    },
+    terminate() {},
+  };
+  const client = new WorkerClient(worker);
+  const status = client.status();
+
+  await Promise.resolve();
+  assert.equal(posted.length, 0);
+
+  worker.onmessage({ data: { schemaVersion: 1, type: "ready" } });
+  await Promise.resolve();
+  assert.equal(posted.length, 1);
+  worker.onmessage({
+    data: {
+      schemaVersion: 1,
+      requestId: posted[0].requestId,
+      ok: true,
+      payload: { upstreamLinked: true },
+    },
+  });
+
+  assert.equal((await status).upstreamLinked, true);
   client.close();
 });
 

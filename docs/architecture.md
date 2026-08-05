@@ -2,11 +2,11 @@
 
 ## Objective
 
-Run the upstream VapourSynth core in a browser worker while retaining genuine node, frame, plugin invocation, and scheduling semantics wherever the browser permits them. Rust is the eventual ownership and browser-integration layer; it does not replace upstream VapourSynth in the compatibility backend.
+Run the upstream VapourSynth core in a browser worker while retaining genuine node, frame, plugin invocation, and scheduling semantics wherever the browser permits them. Rust is the ownership layer of the browser build; it does not replace upstream VapourSynth in the compatibility backend.
 
-## Present build boundaries
+## Build boundaries
 
-The verified control path is one Emscripten C++ module:
+The control path is one Emscripten C++ module:
 
 ```text
 caller-owned RGBA8 memory
@@ -16,12 +16,12 @@ native/browser_bridge.cpp
 statically linked upstream core + selected std plugin code
 ```
 
-Only the bridge owns raw VapourSynth pointers today. RAII wrappers release maps, nodes, frames, and the core in dependency order; the C ABI accepts scalar dimensions and a caller-owned byte span, never a C++ or VapourSynth pointer.
+Only the bridge owns raw VapourSynth pointers. RAII wrappers release maps, nodes, frames, and the core in dependency order; the C ABI accepts scalar dimensions and a caller-owned byte span, never a C++ or VapourSynth pointer.
 
 The linked Rust artifact uses a separate opaque-handle ownership boundary:
 
 ```text
-native/rust_smoke.cpp
+native/tests/render_invert.cpp
   ↕ safe no_std Core / Node / Frame API
 crates/vapoursynth-core
   ↕ fixed-width slot + generation C ABI
@@ -32,33 +32,37 @@ statically linked upstream core + selected std plugin code
 
 The C++ bridge owns a generation-checked token table, the versioned `VSAPI` table, and all `VSCore`, `VSNode`, and `VSFrame` references. Rust owns non-`Send`, non-`Sync` typed tokens whose `Drop` calls the paired C++ release function. A node or frame lease retains the C++ core state, so an out-of-order raw C ABI release cannot call `freeCore` before upstream permits it.
 
-The `wasm-bindgen` scaffold stays on `wasm32-unknown-unknown` and is a distinct module. It cannot be used in the Emscripten artifact: [`wasm-bindgen` does not support `wasm32-unknown-emscripten`](https://rustwasm.github.io/docs/wasm-bindgen/reference/rust-targets.html). This ownership layer uses a handwritten C ABI and `#[cfg(target_os = "emscripten")]`, not `wasm-bindgen`.
+The ownership layer uses a handwritten C ABI and `#[cfg(target_os = "emscripten")]`; it is not a `wasm-bindgen` boundary.
 
-## Intended process model
+## Process model
 
 ### Main thread
 
-Owns UI state, editor state, canvas presentation, and request coordination. It must never execute filters or synchronously wait for frame production.
+Owns UI state, editor state, canvas presentation, and request coordination. It never executes filters and never synchronously waits for frame production.
 
 ### Python worker
 
-Hosts pinned Pyodide and the deliberately supported asynchronous `vapoursynth` API subset. It creates a nested VapourSynth worker and communicates with it through the same correlated request protocol used by the main thread. Python values carry opaque worker handles, not frame buffers or native pointers. Each `.vpy` evaluation receives a fresh Python globals dictionary and a fresh graph state; selected outputs retain their graph until the next script or worker shutdown.
+Hosts the pinned Pyodide runtime and the deliberately supported asynchronous `vapoursynth` API subset. It creates a nested VapourSynth worker and communicates with it through the same correlated request protocol used by the main thread. Python values carry opaque worker handles, not frame buffers or native pointers. Each `.vpy` evaluation receives a fresh Python globals dictionary and a fresh graph state; selected outputs retain their graph until the next script or worker shutdown.
 
 ### VapourSynth worker
 
-Will own the upstream core, plugin registry, all `VSNode`/`VSFrame` lifetimes, frame cache, and execution queue. It is the only future component allowed to dereference VapourSynth pointers outside the Emscripten module.
+Owns the upstream core, plugin registry, all `VSNode`/`VSFrame` lifetimes, frame cache, and execution queue. It is the only component allowed to dereference VapourSynth pointers outside the Emscripten module.
+
+### Runtime layout
+
+The web side of the process model lives in `web/`: `web/app` (demo UI), `web/runtime` (worker and session runtimes), `web/protocol` (the correlated request protocol), `web/python` (the Pyodide-hosted Python API), and `web/tests` (web test suites).
 
 ## Browser-build constraints
 
-The Phase 1a patch makes these explicit:
+The upstream patch set makes these explicit:
 
 - only a statically registered subset of the standard plugin is present;
 - dynamic library loading and automatic plugin discovery are rejected;
-- the scheduler is synchronous and single-threaded for this smoke path;
-- `getFrameAsync` must not be treated as browser-async behaviour yet;
+- the scheduler is synchronous and single-threaded in this build;
+- `getFrameAsync` is not browser-asynchronous behaviour in this build;
 - `std.Resize` is intentionally omitted, so `zimg` is not part of this build.
 
-The initial frame transport copies one RGBA8 frame. A worker protocol will move to transferable `ArrayBuffer` ownership before video work; long-term paths should favour `VideoFrame` and WebCodecs rather than round-tripping pixels through Python.
+Frame transport hands an RGBA8 `ArrayBuffer` to the caller on the `postMessage` transfer list, so buffer ownership moves without a copy. Long-term paths should favour `VideoFrame` and WebCodecs rather than round-tripping pixels through Python.
 
 ## Boundary rules
 
@@ -69,8 +73,8 @@ The initial frame transport copies one RGBA8 frame. A worker protocol will move 
 - Token slots are generation-checked before reuse and retired permanently if their generation would wrap.
 - Worker shutdown releases retained resources deterministically.
 - Python finalizers may request release, but correctness cannot depend on prompt garbage collection.
-- The Python module exposes only `RGB24`, `core.std.BlankClip`, `core.std.Invert`, `VideoNode`, and `set_output()` today. All calls are awaitable because they cross the worker boundary.
+- The Python module exposes only `RGB24`, `core.std.BlankClip`, `core.std.Invert`, `VideoNode`, and `set_output()`; any other API path fails explicitly. All calls are awaitable because they cross the worker boundary.
 
 ## Plugin model
 
-Native desktop plugin binaries are not portable. Supported plugins must be rebuilt from source against the browser toolchain and audited for operating-system APIs, filesystem assumptions, thread-local state, SIMD/inline assembly, dynamic libraries, and callbacks crossing worker or Wasm boundaries. Static registration is the baseline; dynamic Wasm plugins are a separate research milestone.
+Native desktop plugin binaries are not portable. Supported plugins must be rebuilt from source against the browser toolchain and audited for operating-system APIs, filesystem assumptions, thread-local state, SIMD/inline assembly, dynamic libraries, and callbacks crossing worker or Wasm boundaries. Static registration is the baseline; dynamic Wasm plugins are not supported and are separate future work.

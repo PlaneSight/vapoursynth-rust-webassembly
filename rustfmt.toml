@@ -1,0 +1,4 @@
+# Formatting is stable across the pinned toolchain (rust-toolchain.toml).
+# Edition 2024 selects the corresponding style edition for direct rustfmt
+# invocations; `cargo fmt` already reads the edition from Cargo.toml.
+edition = "2024"

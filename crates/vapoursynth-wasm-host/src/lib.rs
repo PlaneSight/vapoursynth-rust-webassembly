@@ -24,7 +24,7 @@ impl WorkerSession {
     /// Creates a worker-local protocol session.
     #[wasm_bindgen(constructor)]
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self { next_request_id: 1 }
     }
 

@@ -1,5 +1,5 @@
-import { drawRgbaFrame } from "./worker-client.mjs";
-import { PyodideWorkerClient } from "./pyodide-worker-client.mjs";
+import { drawRgbaFrame } from "../runtime/vapoursynth/client.mjs";
+import { PyodideWorkerClient } from "../runtime/pyodide/client.mjs";
 
 const canvas = document.querySelector("canvas");
 const source = document.querySelector("textarea");
@@ -29,7 +29,7 @@ window.addEventListener("unhandledrejection", (event) => {
   });
 });
 
-const workerUrl = new URL("./pyodide.worker.mjs", import.meta.url);
+const workerUrl = new URL("../runtime/pyodide/worker.mjs", import.meta.url);
 diagnostics.info("bootstrap", `Creating module worker: ${workerUrl.href}`);
 const worker = new Worker(workerUrl, { type: "module" });
 const client = new PyodideWorkerClient(worker, { onDiagnostic: diagnostics.write });

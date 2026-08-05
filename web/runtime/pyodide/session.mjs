@@ -1,5 +1,5 @@
-import { createPackageInstaller } from "./pyodide-package.mjs";
-import { createPyodideRpc, PYODIDE_RPC_MODULE } from "./pyodide-rpc.mjs";
+import { createPackageInstaller } from "./package.mjs";
+import { createPyodideRpc, PYODIDE_RPC_MODULE } from "../../protocol/pyodide.mjs";
 
 const MAX_SOURCE_LENGTH = 1_000_000;
 const MAX_FILENAME_LENGTH = 256;

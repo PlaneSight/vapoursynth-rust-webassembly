@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { EmscriptenSession } from "./emscripten-session.mjs";
+import { EmscriptenSession } from "../../runtime/emscripten/session.mjs";
 
 function fakeModule({ status = 0 } = {}) {
   const memory = new Uint8Array(1024);

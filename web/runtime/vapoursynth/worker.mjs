@@ -1,9 +1,9 @@
-import { AuthoringSession } from "./authoring-session.mjs";
-import { EmscriptenSession } from "./emscripten-session.mjs";
+import { AuthoringSession } from "./session.mjs";
+import { EmscriptenSession } from "../emscripten/session.mjs";
 import { installWorkerRuntime } from "./worker-runtime.mjs";
 
 try {
-  const { default: createModule } = await import("./runtime/vapoursynth-browser-module.js");
+  const { default: createModule } = await import("../vapoursynth-browser-module.js");
   const module = await createModule();
   installWorkerRuntime(globalThis, new AuthoringSession(new EmscriptenSession(module)));
   globalThis.postMessage({ schemaVersion: 1, type: "ready" });

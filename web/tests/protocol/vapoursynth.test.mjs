@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AuthoringSession } from "./authoring-session.mjs";
-import { createWorkerHandler } from "./worker-protocol.mjs";
+import { AuthoringSession } from "../../runtime/vapoursynth/session.mjs";
+import { createWorkerHandler } from "../../protocol/vapoursynth.mjs";
 
 function fakeSession(overrides = {}) {
   return {

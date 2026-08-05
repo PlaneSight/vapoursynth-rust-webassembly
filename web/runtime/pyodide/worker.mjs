@@ -1,6 +1,6 @@
-import { loadVapourSynthPackageSource } from "./pyodide-package.mjs";
-import { loadBrowserPyodide } from "./pyodide-loader.mjs";
-import { startPyodideWorkerRuntime } from "./pyodide-worker-runtime.mjs";
+import { loadVapourSynthPackageSource } from "./package.mjs";
+import { loadBrowserPyodide } from "./loader.mjs";
+import { startPyodideWorkerRuntime } from "./worker-runtime.mjs";
 
 function reportBootstrap(message, { level = "info", detail } = {}) {
   globalThis.postMessage({
@@ -20,7 +20,7 @@ try {
   await startPyodideWorkerRuntime({
     scope: globalThis,
     loadPyodide: loadBrowserPyodide,
-    createVapourSynthWorker: () => new Worker(new URL("./vapoursynth.worker.mjs", import.meta.url), { type: "module" }),
+    createVapourSynthWorker: () => new Worker(new URL("../vapoursynth/worker.mjs", import.meta.url), { type: "module" }),
     loadPackageSource: loadVapourSynthPackageSource,
     onDiagnostic: reportBootstrap,
   });

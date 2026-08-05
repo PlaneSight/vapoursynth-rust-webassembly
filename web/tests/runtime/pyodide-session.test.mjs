@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PyodideSession } from "./pyodide-session.mjs";
+import { PyodideSession } from "../../runtime/pyodide/session.mjs";
 
 function fakePyodide() {
   const proxies = [];

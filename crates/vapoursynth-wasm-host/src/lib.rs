@@ -107,13 +107,7 @@ fn rgba8_byte_len(width: u32, height: u32) -> Result<usize, JsValue> {
     let bytes = width
         .checked_mul(height)
         .and_then(|pixels| pixels.checked_mul(4))
-        .ok_or_else(|| {
-            worker_error(
-                0,
-                "invalid-dimensions",
-                "RGBA8 byte length overflows u32",
-            )
-        })?;
+        .ok_or_else(|| worker_error(0, "invalid-dimensions", "RGBA8 byte length overflows u32"))?;
 
     usize::try_from(bytes).map_err(|_| {
         worker_error(

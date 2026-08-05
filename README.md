@@ -55,7 +55,7 @@ The smoke tests verify every output pixel is opaque white. The input is the upst
 
 ## Building the browser runtime
 
-The build needs UV 0.12.1+, Rust 1.85.0 with the `wasm32-unknown-emscripten` target, Git, Node, and Emscripten SDK 3.1.68 on `PATH`. UV pins Python 3.11 and Meson 1.3.2 from `pyproject.toml` and `uv.lock`; do not install Meson with `pip` or as a global tool.
+The build needs UV 0.12.1+, Rust 1.85.0 with the `wasm32-unknown-emscripten` target, Git, Node, and Emscripten SDK 3.1.68 on `PATH`. UV pins Python 3.14 and Meson 1.3.2 from `pyproject.toml` and `uv.lock`; do not install Meson with `pip` or as a global tool.
 
 ```bash
 git submodule update --init --recursive

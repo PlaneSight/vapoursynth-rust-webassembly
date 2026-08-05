@@ -1,29 +1,132 @@
-//! Browser-facing `VapourSynth` worker API.
+//! Browser-facing protocol for a worker-owned `VapourSynth` runtime.
+//!
+//! This crate intentionally does not link the Emscripten-built upstream core.
+//! It defines the stable JavaScript boundary that the dedicated worker will
+//! use once the Emscripten module is loaded alongside it.
 
 use wasm_bindgen::prelude::*;
 
-/// Returns a machine-readable status string for the current scaffold build.
+const SCHEMA_VERSION: u32 = 1;
+
+/// Stateful protocol endpoint owned by exactly one dedicated Web Worker.
+///
+/// The worker creates one session and keeps it alive for the worker lifetime.
+/// Native VapourSynth resources remain owned by the separate Emscripten module;
+/// this object only validates requests and reports the current integration
+/// state until that module is attached.
+#[wasm_bindgen]
+pub struct WorkerSession {
+    next_request_id: u32,
+}
+
+#[wasm_bindgen]
+impl WorkerSession {
+    /// Creates a worker-local protocol session.
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { next_request_id: 1 }
+    }
+
+    /// Allocates the next non-zero request identifier.
+    ///
+    /// Request identifiers are correlation values, not resource handles. They
+    /// may wrap after `u32::MAX`; zero is always skipped.
+    #[must_use]
+    pub fn allocate_request_id(&mut self) -> u32 {
+        let request_id = self.next_request_id;
+        self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
+        request_id
+    }
+
+    /// Returns the machine-readable worker capability record.
+    #[must_use]
+    pub fn status(&self) -> String {
+        runtime_status()
+    }
+
+    /// Validates a render request and returns a structured worker error.
+    ///
+    /// # Errors
+    ///
+    /// Returns a JavaScript error when dimensions are zero or overflow the
+    /// RGBA8 byte count. Otherwise it reports that the separate Emscripten
+    /// runtime has not yet been attached.
+    pub fn render_blank_frame(
+        &self,
+        request_id: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<u8>, JsValue> {
+        validate_request_id(request_id)?;
+        rgba8_byte_len(width, height)?;
+        Err(worker_error(
+            request_id,
+            "runtime-unavailable",
+            "the Emscripten VapourSynth runtime is not attached",
+        ))
+    }
+}
+
+impl Default for WorkerSession {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Returns a machine-readable capability record for the isolated host crate.
 #[wasm_bindgen]
 #[must_use]
 pub fn runtime_status() -> String {
-    let linked = vapoursynth_sys_linked();
-    format!("{{\"schemaVersion\":1,\"upstreamLinked\":{linked},\"phase\":\"scaffold\"}}")
+    format!(
+        "{{\"schemaVersion\":{SCHEMA_VERSION},\"upstreamLinked\":false,\"workerProtocol\":true,\"phase\":\"worker-protocol\"}}"
+    )
 }
 
-const fn vapoursynth_sys_linked() -> bool {
-    false
+fn validate_request_id(request_id: u32) -> Result<(), JsValue> {
+    if request_id == 0 {
+        return Err(worker_error(
+            request_id,
+            "invalid-request",
+            "requestId must be non-zero",
+        ));
+    }
+
+    Ok(())
 }
 
-/// Placeholder entry point for the first real upstream proof.
-///
-/// # Errors
-///
-/// Always returns a JavaScript error until a browser-facing upstream bridge is
-/// implemented.
-#[wasm_bindgen]
-pub fn render_blank_frame(_width: u32, _height: u32) -> Result<Vec<u8>, JsValue> {
-    Err(JsValue::from_str(
-        "upstream VapourSynth is not linked; see docs/plan.md milestone 1",
+fn rgba8_byte_len(width: u32, height: u32) -> Result<usize, JsValue> {
+    if width == 0 || height == 0 {
+        return Err(worker_error(
+            0,
+            "invalid-dimensions",
+            "width and height must be non-zero",
+        ));
+    }
+
+    let bytes = width
+        .checked_mul(height)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| {
+            worker_error(
+                0,
+                "invalid-dimensions",
+                "RGBA8 byte length overflows u32",
+            )
+        })?;
+
+    usize::try_from(bytes).map_err(|_| {
+        worker_error(
+            0,
+            "invalid-dimensions",
+            "RGBA8 byte length is not representable on this target",
+        )
+    })
+}
+
+fn worker_error(request_id: u32, code: &str, message: &str) -> JsValue {
+    JsValue::from_str(&format!(
+        "{{\"schemaVersion\":{SCHEMA_VERSION},\"requestId\":{request_id},\"ok\":false,\"error\":{{\"code\":\"{code}\",\"message\":\"{message}\"}}}}"
     ))
 }
 
@@ -32,9 +135,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn status_does_not_claim_upstream_support() {
+    fn status_describes_protocol_without_claiming_upstream_support() {
         let status = runtime_status();
+        assert!(status.contains("\"schemaVersion\":1"));
         assert!(status.contains("\"upstreamLinked\":false"));
-        assert!(status.contains("\"phase\":\"scaffold\""));
+        assert!(status.contains("\"workerProtocol\":true"));
+        assert!(status.contains("\"phase\":\"worker-protocol\""));
+    }
+
+    #[test]
+    fn request_ids_are_non_zero_across_wrap() {
+        let mut session = WorkerSession {
+            next_request_id: u32::MAX,
+        };
+
+        assert_eq!(session.allocate_request_id(), u32::MAX);
+        assert_eq!(session.allocate_request_id(), 1);
+        assert_eq!(session.allocate_request_id(), 2);
+    }
+
+    #[test]
+    fn rgba8_length_rejects_zero_and_overflow() {
+        assert!(rgba8_byte_len(0, 1).is_err());
+        assert!(rgba8_byte_len(1, 0).is_err());
+        assert!(rgba8_byte_len(u32::MAX, u32::MAX).is_err());
+        assert_eq!(rgba8_byte_len(37, 19), Ok(37 * 19 * 4));
     }
 }

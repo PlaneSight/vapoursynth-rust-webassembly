@@ -3,11 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:browser": "uv run --locked bash tools/build-browser.sh",
-    "serve:web": "uv run --locked python -m http.server 4173",
-    "test:python": "uv run --locked python -m unittest discover -s web/python -p test_*.py",
-    "test:rust": "uv run --locked cargo test --locked --workspace",
-    "test:web": "uv run --locked node --test web/*.test.mjs"
+    "test": "node --test web/tests/**/*.test.mjs",
+    "test:unit": "node --test web/tests/runtime/*.test.mjs web/tests/protocol/*.test.mjs",
+    "test:integration": "node --test web/tests/integration/*.test.mjs",
+    "serve": "uv run --locked python -m http.server 4173"
   },
   "devDependencies": {
     "pyodide": "0.29.4"

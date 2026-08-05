@@ -1,9 +1,6 @@
-import init, { WorkerSession } from "../pkg/vapoursynth_wasm_host.js";
-import { startWorkerRuntime } from "./worker-runtime.mjs";
+import createModule from "../build/browser/native/vapoursynth-browser-module.js";
+import { EmscriptenSession } from "./emscripten-session.mjs";
+import { installWorkerRuntime } from "./worker-runtime.mjs";
 
-await startWorkerRuntime({
-  loadHost: async () => {
-    await init();
-    return { WorkerSession };
-  },
-});
+const module = await createModule();
+installWorkerRuntime(globalThis, new EmscriptenSession(module));

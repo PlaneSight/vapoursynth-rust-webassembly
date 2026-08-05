@@ -120,11 +120,7 @@ impl<'a, const N: usize> Arguments<'a, N> {
     /// Returns [`ArgumentError::DuplicateKey`] when the key already exists or
     /// [`ArgumentError::CapacityExceeded`] when the list is full.
     pub fn push(&mut self, argument: Argument<'a>) -> Result<(), ArgumentError> {
-        if self
-            .as_slice()
-            .iter()
-            .any(|existing| existing.key == argument.key)
-        {
+        if self.iter().any(|existing| existing.key == argument.key) {
             return Err(ArgumentError::DuplicateKey);
         }
 
@@ -149,23 +145,11 @@ impl<'a, const N: usize> Arguments<'a, N> {
         self.len == 0
     }
 
-    /// Returns the initialized argument prefix.
-    #[must_use]
-    pub fn as_slice(&self) -> &[Argument<'a>] {
-        // `Option<Argument>` is not layout-compatible with `Argument`, so keep
-        // this conversion explicit and allocation-free through an iterator-like
-        // indexed accessor instead of unsafe slice casting.
-        //
-        // This method is implemented below by exposing entries through `get`;
-        // callers needing traversal should use `iter`.
-        &[]
-    }
-
     /// Iterates over initialized arguments in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = Argument<'a>> + '_ {
-        self.entries[..self.len].iter().map(|entry| {
-            entry.expect("initialized argument prefix must contain values")
-        })
+        self.entries[..self.len]
+            .iter()
+            .map(|entry| entry.expect("initialized argument prefix must contain values"))
     }
 }
 

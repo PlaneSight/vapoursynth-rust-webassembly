@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VapourSynth WebAssembly</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+      main { width: min(48rem, calc(100% - 2rem)); display: grid; gap: 1rem; }
+      canvas { width: 100%; aspect-ratio: 16 / 9; background: #111; image-rendering: pixelated; }
+      footer { display: flex; align-items: center; gap: 1rem; }
+      output { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>VapourSynth WebAssembly</h1>
+      <canvas width="320" height="180"></canvas>
+      <footer>
+        <button type="button" disabled>Render upstream frame</button>
+        <output>Starting worker…</output>
+      </footer>
+    </main>
+    <script type="module" src="./demo.mjs"></script>
+  </body>
+</html>

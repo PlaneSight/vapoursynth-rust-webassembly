@@ -99,3 +99,31 @@ rust_smoke = executable(
 )
 
 test('Rust safe ownership to VapourSynth RGBA', rust_smoke)
+
+browser_module = executable(
+    'vapoursynth-browser-module.js',
+    'browser_module.cpp',
+    cpp_args: browser_cpp_args,
+    link_with: [rust_core, browser_bridge, upstream_core],
+    override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
+    link_args: [
+        '--no-entry',
+        '-fexceptions',
+        '-sWASM_BIGINT',
+        '-sABORTING_MALLOC=0',
+        '-sALLOW_MEMORY_GROWTH=0',
+        '-sASSERTIONS=2',
+        '-sENVIRONMENT=worker,node',
+        '-sEXPORT_ES6=1',
+        '-sMODULARIZE=1',
+        '-sINITIAL_MEMORY=67108864',
+        '-sEXPORTED_FUNCTIONS=["_malloc","_free","_vs_rust_render_inverted_blank"]',
+    ],
+)
+
+node = find_program('node')
+test(
+    'worker-owned Emscripten ES module',
+    node,
+    args: [files('browser_module_smoke.mjs'), browser_module],
+)

@@ -40,14 +40,20 @@ Generated files belong only in `build/`: `build/emscripten/` holds Meson/Emscrip
 
 Docker Compose runs the same format, Rust, Node, Python, and Emscripten checks in a Linux container. The repository is mounted read-only; each run copies it into a container workspace, so the upstream patch cycle and generated files cannot modify the checkout.
 
+Use the UV task interface:
+
 ```bash
-docker compose run --rm verify
+uv run --locked python tools/workflow.py verify
 ```
 
 The first run builds a pinned toolchain image; subsequent runs reuse container-owned Cargo, npm, and UV caches. To serve a freshly built browser distribution from the isolated workspace:
 
 ```bash
-docker compose --profile demo up --build demo
+uv run --locked python tools/workflow.py demo
 ```
 
-Open `http://localhost:4173/`. Stop the preview with `docker compose --profile demo down`. For an isolated interactive shell, run `docker compose --profile shell run --rm shell`.
+Open `http://localhost:4173/`. Stop the preview with `docker compose --profile demo down`. For an isolated interactive shell, run:
+
+```bash
+uv run --locked python tools/workflow.py shell
+```

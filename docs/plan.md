@@ -99,6 +99,8 @@ Use the public domain model of `vapoursynth4-rs` and `rust-av/vapoursynth-rs` as
 
 ## Milestone 3 — Pyodide `.vpy` authoring
 
+**Status:** build candidate. The checked-in package, two-worker protocol, and real Pyodide integration test prove the authoring boundary; a full browser/Emscripten end-to-end run remains required before this milestone is verified.
+
 Provide a Python package exposing `vs.core`, `VideoNode`, format constants, function namespaces, and `set_output()` through asynchronous RPC. Unsupported APIs fail immediately with specific errors.
 
 ## Milestone 4 — Real video path

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+export PATH="$PWD/toolchains:$PATH"
 
 python3 tools/apply_upstream_patches.py
 if [[ -d build/browser/meson-private ]]; then

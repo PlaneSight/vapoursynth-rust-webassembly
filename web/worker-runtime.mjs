@@ -15,7 +15,7 @@ export function installWorkerRuntime(scope, session) {
       response = {
         message: {
           schemaVersion: 1,
-          requestId: 0,
+          requestId: error?.requestId ?? 0,
           ok: false,
           error: {
             code: error?.code ?? "invalid-request",

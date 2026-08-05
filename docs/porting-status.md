@@ -10,9 +10,9 @@ This document is the source of truth for support claims.
 | Standard plugin | Limited linked | Static `std` registration contains the code required for `BlankClip` and `Invert`, not the full plugin set. |
 | `BlankClip → Invert → RGBA` | Linked | `native/smoke.cpp` checks every pixel derived from an upstream `VSFrame` in the passing browser-spike job. |
 | Rust ↔ C++ ABI probe | Linked | The browser-spike CI job verified the no-`std` Rust static library in the same Emscripten module. |
-| Browser worker/canvas | Planned | Milestone 1c. |
-| Rust-to-upstream ownership FFI | Build candidate | Milestone 1b.1 adds typed generation-checked bridge tokens instead of raw upstream pointers. |
-| Pyodide API | Planned | Milestone 3. |
+| Browser worker/canvas | Linked | The browser-spike job builds the worker-owned Emscripten ES module; focused Node tests cover request correlation, transferable frames, failure translation, and shutdown. |
+| Rust-to-upstream ownership FFI | Linked | The browser-spike job exercises the typed generation-checked Rust `Core → Node → Frame` path through the C++ bridge. |
+| Pyodide `.vpy` API | Build candidate | A pinned Pyodide 0.29.4 worker installs the checked-in `vapoursynth` package, and its real-interpreter Node test executes `BlankClip → Invert → set_output` through async RPC. A full browser/Emscripten end-to-end run is still required. |
 | Native plugin binaries | Unsupported | They must be rebuilt from source. |
 | Dynamic plugin discovery | Unsupported | The browser patch explicitly rejects it. |
 | `std.Resize` / zimg | Deferred | Not in the initial source closure. |

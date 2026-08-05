@@ -29,17 +29,18 @@ The direct C++ smoke test uses a 37×19 frame and verifies every resulting RGBA 
 
 ## Build
 
-Install Rust 1.85.0 with `wasm32-unknown-emscripten`, Emscripten 3.1.68, and Meson 1.3.2, then run:
+Install UV 0.12.1+, Rust 1.85.0 with `wasm32-unknown-emscripten`, and Emscripten 3.1.68, then run:
 
 ```bash
 git submodule update --init --recursive
-python3 tools/apply_upstream_patches.py
-meson setup build/browser . --cross-file toolchains/emscripten.ini --buildtype debug
-meson compile -C build/browser
-meson test -C build/browser --print-errorlogs
+uv sync --locked
+uv run --locked python tools/apply_upstream_patches.py
+uv run --locked meson setup build/browser . --cross-file toolchains/emscripten.ini --buildtype debug
+uv run --locked meson compile -C build/browser
+uv run --locked meson test -C build/browser --print-errorlogs
 ```
 
-`tools/build-browser.sh` executes the same sequence. Meson invokes `tools/build-emscripten-core.sh` as a custom target; its Cargo output stays under the Meson build tree before `em++` performs the final link. The CI workflow installs the Emscripten Rust target, the pinned Meson and Emscripten versions, and runs that script from a clean checkout.
+`tools/build-browser.sh` executes the same sequence through locked UV commands. Meson invokes `tools/build-emscripten-core.sh` as a custom target; its Cargo output stays under the Meson build tree before `em++` performs the final link. The CI workflow synchronizes the locked UV environment, installs the Emscripten Rust target and pinned Emscripten SDK, then runs that script from a clean checkout.
 
 ## Upstream patch boundary
 

@@ -1,0 +1,27 @@
+version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[[package]]
+name = "meson"
+version = "1.3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/09/5f6cd56ca83c7d093345e406aee0b8a2f9fd504e601de9a293f050a52abe/meson-1.3.2.tar.gz", hash = "sha256:492eb450c8b073024276f916f5adbb3c4bb7e90e9e6ec124efda064f3d9b5baa", size = 2223798, upload-time = "2024-02-13T20:11:45.659Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/7c/ff115bec047c5127567048db40818b83b47fd0d3bfcfd0d87630d44ed66f/meson-1.3.2-py3-none-any.whl", hash = "sha256:0ba4a71fbc060c44721c7b674807598c5af9ea51335073cae7a3e9a95b375c89", size = 977700, upload-time = "2024-02-13T20:11:41.961Z" },
+]
+
+[[package]]
+name = "vapoursynth-rust-webassembly"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "meson" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [{ name = "meson", specifier = "==1.3.2" }]

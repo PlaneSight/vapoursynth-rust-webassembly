@@ -18,21 +18,21 @@ statically linked upstream core + selected std plugin code
 
 Only the bridge owns raw VapourSynth pointers today. RAII wrappers release maps, nodes, frames, and the core in dependency order; the C ABI accepts scalar dimensions and a caller-owned byte span, never a C++ or VapourSynth pointer.
 
-The source tree also contains a pending Emscripten ABI control:
+The linked Rust artifact uses a separate opaque-handle ownership boundary:
 
 ```text
 native/rust_smoke.cpp
-  ↕ fixed-width, non-unwinding C ABI
-crates/vapoursynth-emscripten-probe
-  ↕ fixed-width, non-unwinding C ABI
+  ↕ safe no_std Core / Node / Frame API
+crates/vapoursynth-core
+  ↕ fixed-width slot + generation C ABI
 native/browser_bridge.cpp
   ↕ VapourSynth C API
 statically linked upstream core + selected std plugin code
 ```
 
-The probe is `no_std`, builds with `panic=abort`, returns only an `int32_t` status, and owns no upstream pointer. It lets the final Emscripten link exercise Rust and C++ without claiming a safe Rust ownership layer yet.
+The C++ bridge owns a generation-checked token table, the versioned `VSAPI` table, and all `VSCore`, `VSNode`, and `VSFrame` references. Rust owns non-`Send`, non-`Sync` typed tokens whose `Drop` calls the paired C++ release function. A node or frame lease retains the C++ core state, so an out-of-order raw C ABI release cannot call `freeCore` before upstream permits it.
 
-The `wasm-bindgen` scaffold stays on `wasm32-unknown-unknown` and is a distinct module. It cannot be used in the Emscripten artifact: [`wasm-bindgen` does not support `wasm32-unknown-emscripten`](https://rustwasm.github.io/docs/wasm-bindgen/reference/rust-targets.html). The later ownership layer will use a handwritten C ABI and `#[cfg(target_os = "emscripten")]`, not `wasm-bindgen`.
+The `wasm-bindgen` scaffold stays on `wasm32-unknown-unknown` and is a distinct module. It cannot be used in the Emscripten artifact: [`wasm-bindgen` does not support `wasm32-unknown-emscripten`](https://rustwasm.github.io/docs/wasm-bindgen/reference/rust-targets.html). This ownership layer uses a handwritten C ABI and `#[cfg(target_os = "emscripten")]`, not `wasm-bindgen`.
 
 ## Intended process model
 
@@ -62,11 +62,11 @@ The initial frame transport copies one RGBA8 frame. A worker protocol will move 
 
 ## Boundary rules
 
-- The ABI probe exposes only fixed-width scalar values and a transient caller-owned byte span.
-- Raw C layouts and imports stay in `vapoursynth-sys` once Rust joins the same module.
-- Safe Rust wrappers own every reference-count change and convert upstream errors immediately.
+- The ownership ABI exposes only fixed-width scalars, paired slot/generation values, and a transient caller-owned byte span.
+- `vapoursynth-sys` declares only the C++ bridge ABI; raw VapourSynth layouts remain private to C++.
+- Safe Rust wrappers own every bridge-token release and convert upstream statuses immediately.
 - JavaScript sees integers, structured errors, and transferable buffers—not pointers.
-- Cross-worker handles must become generation-checked before reuse is possible.
+- Token slots are generation-checked before reuse and retired permanently if their generation would wrap.
 - Worker shutdown releases retained resources deterministically.
 - Python finalizers may request release, but correctness cannot depend on prompt garbage collection.
 

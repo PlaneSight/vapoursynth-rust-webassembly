@@ -4,13 +4,13 @@ An architecture-first research project for running the **real upstream VapourSyn
 
 ## Current status
 
-**Phase 1a is verified; Phase 1b.0 is an ABI-link candidate.** The Emscripten CI job has verified a narrowly scoped upstream build that statically registers `std`, evaluates `BlankClip → Invert → frame 0`, and copies planar RGB24 into caller-owned RGBA8 memory. The next source slice adds a second smoke executable:
+**Phases 1a and 1b.0 are verified; Phase 1b.1 is an ownership candidate.** The Emscripten CI job has verified both the narrow upstream path and an Emscripten-linked Rust static library. The current source adds typed opaque ownership:
 
 ```text
-C++ smoke → no_std Rust static library → C++ bridge → upstream VapourSynth → RGBA8
+C++ smoke → safe no_std Rust Core / Node / Frame → C++ handle bridge → upstream VapourSynth → RGBA8
 ```
 
-It is deliberately a link-and-status proof, not a safe `VSCore` wrapper, worker, canvas, or browser JavaScript API. The current `wasm-bindgen` crate remains an isolated `wasm32-unknown-unknown` scaffold; it is not part of the Emscripten artifact. `wasm-bindgen` explicitly does not support `wasm32-unknown-emscripten`.
+Rust owns only thread-affine `(slot, generation)` tokens; C++ retains the `VSAPI` table and every actual upstream pointer. The current `wasm-bindgen` crate remains an isolated `wasm32-unknown-unknown` scaffold; it is not part of the Emscripten artifact. `wasm-bindgen` explicitly does not support `wasm32-unknown-emscripten`.
 
 See [the build-spike record](docs/build-spike.md), [the implementation plan](docs/plan.md), and [the support matrix](docs/porting-status.md).
 
@@ -35,8 +35,9 @@ The smoke executable verifies every output pixel is opaque white. Its input is t
 - `toolchains/` — Meson cross files.
 - `tools/` — deterministic build and patch-entry scripts.
 - `vendor/vapoursynth` — pinned upstream Git submodule; never edited as an unrecorded local fork.
-- `crates/vapoursynth-emscripten-probe/` — no-`std`, non-unwinding Rust static library used only by the ABI smoke.
-- `crates/vapoursynth-{sys,core,wasm-host}/` — future ownership and worker scaffolding; none is linked into the browser spike.
+- `crates/vapoursynth-sys/` — handwritten, fixed-width imports for the C++ opaque-handle ABI.
+- `crates/vapoursynth-core/` — no-`std`, thread-affine Rust `Core` / `Node` / `Frame` ownership layer linked into the browser smoke.
+- `crates/vapoursynth-wasm-host/` — deliberately separate `wasm-bindgen` scaffold for the future worker API.
 - `docs/` — architecture, scope, status, and reproducibility records.
 
 ## Building the browser spike
@@ -53,7 +54,7 @@ The script applies the locked upstream patch, configures `build/browser`, builds
 ## Non-goals of this milestone
 
 - Browser worker or canvas presentation.
-- Direct Rust ownership of `VSCore`, `VSNode`, or `VSFrame`.
+- Direct Rust access to `VSCore`, `VSNode`, `VSFrame`, maps, callbacks, or error-string pointers.
 - Linking the `wasm-bindgen` scaffold into the Emscripten artifact.
 - Pyodide or `.vpy` execution.
 - Dynamic plugin discovery or native plugin binaries.

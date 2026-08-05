@@ -5,13 +5,13 @@ This document is the source of truth for support claims.
 | Area | Status | Evidence |
 |---|---|---|
 | Rust workspace | Scaffolded | Host crates and tests are checked in. |
-| Raw VapourSynth ABI | Placeholder | Opaque Rust markers only; generated bindings are deferred to Milestone 1b.1. |
+| Raw VapourSynth ABI | Deliberately private | C++ owns the versioned `VSAPI` table and every raw upstream pointer. |
 | Upstream core build | Linked | The Emscripten browser-spike job passed the direct Node smoke in [run 83953783328](https://github.com/PlaneSight/vapoursynth-rust-webassembly/actions/runs/83953783328). |
 | Standard plugin | Limited linked | Static `std` registration contains the code required for `BlankClip` and `Invert`, not the full plugin set. |
 | `BlankClip → Invert → RGBA` | Linked | `native/smoke.cpp` checks every pixel derived from an upstream `VSFrame` in the passing browser-spike job. |
-| Rust ↔ C++ ABI probe | Build candidate | `native/rust_smoke.cpp` will call the no-`std` Emscripten Rust static library and verify the same RGBA result. |
+| Rust ↔ C++ ABI probe | Linked | The browser-spike CI job verified the no-`std` Rust static library in the same Emscripten module. |
 | Browser worker/canvas | Planned | Milestone 1c. |
-| Rust-to-upstream ownership FFI | Planned | Milestone 1b.1 uses opaque bridge handles rather than raw upstream pointers. |
+| Rust-to-upstream ownership FFI | Build candidate | Milestone 1b.1 adds typed generation-checked bridge tokens instead of raw upstream pointers. |
 | Pyodide API | Planned | Milestone 3. |
 | Native plugin binaries | Unsupported | They must be rebuilt from source. |
 | Dynamic plugin discovery | Unsupported | The browser patch explicitly rejects it. |

@@ -2,8 +2,6 @@ if host_machine.system() != 'emscripten'
     error('The upstream browser spike must be configured with toolchains/emscripten.ini')
 endif
 
-build_rust_emscripten_probe = get_option('build_rust_emscripten_probe')
-
 browser_cpp_args = [
     '-DVS_BROWSER_SINGLE_THREAD=1',
     '-DVS_BROWSER_STATIC_PLUGINS=1',
@@ -69,37 +67,35 @@ smoke = executable(
     ],
 )
 
-test('upstream BlankClip to Invert RGBA', smoke)
+test('upstream opaque-handle RGBA', smoke)
 
-if build_rust_emscripten_probe
-    rust_probe_builder = find_program(
-        join_paths(meson.project_source_root(), 'tools', 'build-emscripten-probe.sh'),
-    )
-    rust_probe = custom_target(
-        'vapoursynth-emscripten-probe',
-        output: 'libvapoursynth-emscripten-probe.a',
-        command: [rust_probe_builder, '@OUTPUT@', '@OUTDIR@/cargo'],
-        build_always_stale: true,
-        build_by_default: true,
-    )
+rust_core_builder = find_program(
+    join_paths(meson.project_source_root(), 'tools', 'build-emscripten-core.sh'),
+)
+rust_core = custom_target(
+    'vapoursynth-emscripten-core',
+    output: 'libvapoursynth-emscripten-core.a',
+    command: [rust_core_builder, '@OUTPUT@', '@OUTDIR@/cargo'],
+    build_always_stale: true,
+    build_by_default: true,
+)
 
-    rust_smoke = executable(
-        'vapoursynth-rust-browser-smoke',
-        'rust_smoke.cpp',
-        cpp_args: browser_cpp_args,
-        link_with: [rust_probe, browser_bridge, upstream_core],
-        override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
-        link_args: [
-            '-fexceptions',
-            '-sWASM_BIGINT',
-            '-sABORTING_MALLOC=0',
-            '-sALLOW_MEMORY_GROWTH=0',
-            '-sASSERTIONS=2',
-            '-sENVIRONMENT=node,web',
-            '-sEXIT_RUNTIME=1',
-            '-sINITIAL_MEMORY=67108864',
-        ],
-    )
+rust_smoke = executable(
+    'vapoursynth-rust-browser-smoke',
+    'rust_smoke.cpp',
+    cpp_args: browser_cpp_args,
+    link_with: [rust_core, browser_bridge, upstream_core],
+    override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
+    link_args: [
+        '-fexceptions',
+        '-sWASM_BIGINT',
+        '-sABORTING_MALLOC=0',
+        '-sALLOW_MEMORY_GROWTH=0',
+        '-sASSERTIONS=2',
+        '-sENVIRONMENT=node,web',
+        '-sEXIT_RUNTIME=1',
+        '-sINITIAL_MEMORY=67108864',
+    ],
+)
 
-    test('Rust to VapourSynth to RGBA ABI', rust_smoke)
-endif
+test('Rust safe ownership to VapourSynth RGBA', rust_smoke)

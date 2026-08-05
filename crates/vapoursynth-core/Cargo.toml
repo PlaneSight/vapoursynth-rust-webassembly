@@ -8,8 +8,10 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-thiserror.workspace = true
 vapoursynth-sys = { path = "../vapoursynth-sys" }
+
+[lib]
+crate-type = ["rlib", "staticlib"]
 
 [lints]
 workspace = true

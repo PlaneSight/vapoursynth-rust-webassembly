@@ -11,6 +11,7 @@ permissions:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.85.0
@@ -28,6 +29,7 @@ jobs:
 
   browser-spike:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,7 +48,7 @@ jobs:
           "$RUNNER_TEMP/emsdk/emsdk" install 3.1.68
           "$RUNNER_TEMP/emsdk/emsdk" activate 3.1.68
           echo "$RUNNER_TEMP/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
-      - name: Lint Emscripten Rust probe
-        run: RUSTFLAGS=-Cpanic=abort cargo clippy --locked -p vapoursynth-emscripten-probe --target wasm32-unknown-emscripten -- -D warnings
+      - name: Lint Emscripten Rust ownership layer
+        run: RUSTFLAGS=-Cpanic=abort cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
       - name: Build upstream browser smoke
         run: tools/build-browser.sh

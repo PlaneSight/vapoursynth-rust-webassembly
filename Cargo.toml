@@ -4,7 +4,6 @@ members = [
     "crates/vapoursynth-sys",
     "crates/vapoursynth-core",
     "crates/vapoursynth-wasm-host",
-    "crates/vapoursynth-emscripten-probe",
 ]
 
 [workspace.package]
@@ -14,7 +13,6 @@ license = "UNLICENSED"
 repository = "https://github.com/PlaneSight/vapoursynth-rust-webassembly"
 
 [workspace.dependencies]
-thiserror = "2.0"
 wasm-bindgen = "0.2"
 
 [workspace.lints.rust]

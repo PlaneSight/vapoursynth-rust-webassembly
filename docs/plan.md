@@ -40,6 +40,8 @@ Exit criteria:
 
 ## Milestone 1b.0 — Emscripten Rust ABI probe
 
+**Status:** verified by the `browser-spike` CI job on 2026-08-05.
+
 Build one no-`std`, `panic=abort` Rust static library for `wasm32-unknown-emscripten`, then have the final `em++` link combine it with the existing C++ bridge and upstream core. A separate C++ smoke executable must call Rust, which calls the existing bridge, and must verify the same exact RGBA result and boundary errors as the direct C++ control.
 
 Exit criteria:
@@ -51,7 +53,16 @@ Exit criteria:
 
 ## Milestone 1b.1 — Safe upstream ownership layer
 
-Replace the probe with an opaque C++ handle ABI and safe Rust `Core`, `Node`, and `Frame` wrappers. C++ retains ownership of the versioned `VSAPI` table; Rust owns only opaque bridge handles with matching drops. Do not expose a raw `VSCore *`, `VSNode *`, `VSFrame *`, map, callback, or error-string pointer across the language boundary.
+**Status:** source candidate; this change requires the next browser-spike pass.
+
+Replace the probe with an opaque C++ handle ABI and safe Rust `Core`, `Node`, and `Frame` wrappers. C++ retains ownership of the versioned `VSAPI` table; Rust owns only generation-checked bridge tokens with matching drops. Do not expose a raw `VSCore *`, `VSNode *`, `VSFrame *`, map, callback, or error-string pointer across the language boundary.
+
+Exit criteria:
+
+- A direct C++ smoke proves stale, wrong-kind, double-release, and parent-before-child release handling.
+- A Rust smoke builds the safe `Core → BlankClip → Invert → Frame → RGBA8` path twice in one Emscripten module.
+- Token reuse rejects the old generation, and token generation wrap retires a slot instead of reusing it.
+- No safe Rust ownership type is `Send` or `Sync`; the worker remains the sole owner of the module.
 
 ## Milestone 1c — Browser worker and canvas
 

@@ -117,4 +117,7 @@ jobs:
       - name: Build upstream browser smoke
         run: |
           source "$EMSDK/emsdk_env.sh"
-          tools/build-browser.sh
+          if ! tools/build-browser.sh; then
+            cat build/browser/meson-logs/meson-log.txt
+            exit 1
+          fi

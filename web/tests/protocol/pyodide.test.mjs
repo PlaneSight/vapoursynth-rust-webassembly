@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPyodideRpc } from "./pyodide-rpc.mjs";
+import { createPyodideRpc } from "../../protocol/pyodide.mjs";
 
 test("maps Python-facing RPC calls onto opaque worker-client operations", async () => {
   const calls = [];

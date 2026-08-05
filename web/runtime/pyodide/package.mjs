@@ -1,8 +1,8 @@
-import { PYODIDE_RPC_MODULE } from "./pyodide-rpc.mjs";
+import { PYODIDE_RPC_MODULE } from "../../protocol/pyodide.mjs";
 
 export const VAPOURSYNTH_MODULE_NAME = "vapoursynth";
 
-const PACKAGE_SOURCE_URL = new URL("./python/vapoursynth.py", import.meta.url);
+const PACKAGE_SOURCE_URL = new URL("../../python/vapoursynth.py", import.meta.url);
 
 export async function loadVapourSynthPackageSource(fetchImpl = globalThis.fetch) {
   if (typeof fetchImpl !== "function") {

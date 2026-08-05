@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { loadPyodide } from "pyodide";
 
-import { PyodideSession } from "./pyodide-session.mjs";
+import { PyodideSession } from "../../runtime/pyodide/session.mjs";
 
 test("installs and executes the browser vapoursynth package in real Pyodide", { timeout: 120_000 }, async () => {
   const calls = [];
@@ -38,7 +38,7 @@ test("installs and executes the browser vapoursynth package in real Pyodide", { 
       return { width: 3, height: 2, rgba: new ArrayBuffer(24) };
     },
   };
-  const packageSource = await readFile(new URL("./python/vapoursynth.py", import.meta.url), "utf8");
+  const packageSource = await readFile(new URL("../../python/vapoursynth.py", import.meta.url), "utf8");
   const pyodide = await loadPyodide();
   const session = new PyodideSession({ pyodide, workerClient, packageSource });
   await session.initialize();

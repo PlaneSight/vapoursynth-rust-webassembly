@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPackageInstaller, loadVapourSynthPackageSource } from "./pyodide-package.mjs";
-import { DEFAULT_PYODIDE_INDEX_URL, loadBrowserPyodide, PYODIDE_VERSION } from "./pyodide-loader.mjs";
+import { createPackageInstaller, loadVapourSynthPackageSource } from "../../runtime/pyodide/package.mjs";
+import { DEFAULT_PYODIDE_INDEX_URL, loadBrowserPyodide, PYODIDE_VERSION } from "../../runtime/pyodide/loader.mjs";
 
 test("loads the checked-in Python package through an injectable fetch boundary", async () => {
   let requestedUrl;

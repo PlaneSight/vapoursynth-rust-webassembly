@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PyodideWorkerClient } from "./pyodide-worker-client.mjs";
-import { installPyodideWorkerRuntime, startPyodideWorkerRuntime } from "./pyodide-worker-runtime.mjs";
+import { PyodideWorkerClient } from "../../runtime/pyodide/client.mjs";
+import { installPyodideWorkerRuntime, startPyodideWorkerRuntime } from "../../runtime/pyodide/worker-runtime.mjs";
 
 function session() {
   return {

@@ -1,4 +1,4 @@
-import { createWorkerHandler } from "./worker-protocol.mjs";
+import { createWorkerHandler } from "../../protocol/vapoursynth.mjs";
 
 export function installWorkerRuntime(scope, session) {
   if (!scope || typeof scope.postMessage !== "function") {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AuthoringSession } from "./authoring-session.mjs";
+import { AuthoringSession } from "../../runtime/vapoursynth/session.mjs";
 
 function runtime() {
   return {

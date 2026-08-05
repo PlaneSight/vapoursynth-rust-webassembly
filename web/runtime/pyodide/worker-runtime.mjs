@@ -1,6 +1,6 @@
-import { PyodideSession } from "./pyodide-session.mjs";
-import { WorkerClient } from "./worker-client.mjs";
-import { createPyodideWorkerHandler } from "./pyodide-worker-protocol.mjs";
+import { PyodideSession } from "./session.mjs";
+import { WorkerClient } from "../vapoursynth/client.mjs";
+import { createPyodideWorkerHandler } from "../../protocol/pyodide.mjs";
 
 export function installPyodideWorkerRuntime(scope, session) {
   if (!scope || typeof scope.postMessage !== "function") {

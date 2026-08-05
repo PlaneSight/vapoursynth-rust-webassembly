@@ -1,0 +1,42 @@
+name: vapoursynth-wasm
+
+services:
+  verify:
+    build:
+      context: .
+      args:
+        RUST_VERSION: "1.85.0"
+        EMSCRIPTEN_VERSION: "3.1.68"
+        UV_VERSION: "0.12.1"
+    image: vapoursynth-wasm-build:local
+    volumes:
+      - ./:/source:ro
+      - cargo-registry:/opt/cargo/registry
+      - cargo-git:/opt/cargo/git
+      - cargo-target:/cache/cargo-target
+      - npm-cache:/root/.npm
+      - uv-cache:/root/.cache/uv
+    environment:
+      CARGO_TARGET_DIR: /cache/cargo-target
+    command: ["./docker/verify.sh"]
+
+  demo:
+    extends: verify
+    profiles: ["demo"]
+    ports:
+      - "4173:4173"
+    command: ["./docker/serve.sh"]
+
+  shell:
+    extends: verify
+    profiles: ["shell"]
+    stdin_open: true
+    tty: true
+    command: ["bash"]
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  cargo-target:
+  npm-cache:
+  uv-cache:

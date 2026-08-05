@@ -35,3 +35,19 @@ npm run serve
 Open `http://localhost:4173/web/app/index.html`. The build applies the locked upstream patch only while compiling, restores the submodule before exit, runs the native render-invert and ES-module tests, and stages the deployable site in `build/web/`.
 
 Generated files belong only in `build/`: `build/emscripten/` holds Meson/Emscripten output, `build/web/` holds the browser distribution, and `build/test/` is reserved for test output. Do not hand-edit generated files.
+
+## Isolated Docker builds
+
+Docker Compose runs the same format, Rust, Node, Python, and Emscripten checks in a Linux container. The repository is mounted read-only; each run copies it into a container workspace, so the upstream patch cycle and generated files cannot modify the checkout.
+
+```bash
+docker compose run --rm verify
+```
+
+The first run builds a pinned toolchain image; subsequent runs reuse container-owned Cargo, npm, and UV caches. To serve a freshly built browser distribution from the isolated workspace:
+
+```bash
+docker compose --profile demo up --build demo
+```
+
+Open `http://localhost:4173/`. Stop the preview with `docker compose --profile demo down`. For an isolated interactive shell, run `docker compose --profile shell run --rm shell`.

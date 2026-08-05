@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-05T16:02:54.080Z",
+  "title": "Design System: VapourSynth WebAssembly — Broadcast Mixer",
+  "extensions": {
+    "colorMeta": {
+      "bg": { "role": "neutral", "displayName": "Control Room Black", "canonical": "oklch(16.4% 0.005 264.4)", "tonalRamp": ["#0a0b0f", "#24252b", "#41424b", "#60616d", "#818291", "#a3a5b7", "#c8c9de", "#edeeff"] },
+      "surface-0": { "role": "neutral", "displayName": "Graphite Panel", "canonical": "oklch(19.2% 0.008 274.5)", "tonalRamp": ["#0a0b10", "#24252c", "#40424c", "#60616e", "#818292", "#a3a5b8", "#c7c9e0", "#edeeff"] },
+      "surface-1": { "role": "neutral", "displayName": "Graphite Raised", "canonical": "oklch(21.0% 0.010 276.6)", "tonalRamp": ["#0a0b11", "#24252d", "#40424d", "#5f616f", "#808293", "#a3a5b9", "#c7c9e1", "#eceeff"] },
+      "surface-2": { "role": "neutral", "displayName": "Graphite Highlight", "canonical": "oklch(24.0% 0.012 270.9)", "tonalRamp": ["#090b11", "#23252e", "#3f424e", "#5f6170", "#7f8294", "#a2a5ba", "#c6c9e2", "#ebeeff"] },
+      "field": { "role": "neutral", "displayName": "Field Charcoal", "canonical": "oklch(16.9% 0.006 271.0)", "tonalRamp": ["#0a0b0f", "#24252c", "#41424b", "#60616e", "#818292", "#a3a5b7", "#c7c9df", "#edeeff"] },
+      "screen": { "role": "neutral", "displayName": "Monitor Void", "canonical": "oklch(15.4% 0.005 264.4)", "tonalRamp": ["#0a0b0f", "#24252b", "#41424b", "#60616d", "#818291", "#a3a5b7", "#c7c9de", "#edeeff"] },
+      "line": { "role": "neutral", "displayName": "Hairline", "canonical": "rgba(255, 255, 255, 0.075)", "tonalRamp": ["#0b0b0d", "#252529", "#424249", "#61616b", "#82828f", "#a5a5b4", "#c9c9dc", "#eeeeff"] },
+      "line-strong": { "role": "neutral", "displayName": "Hairline Strong", "canonical": "rgba(255, 255, 255, 0.14)", "tonalRamp": ["#0b0b0d", "#252529", "#424249", "#61616b", "#82828f", "#a5a5b4", "#c9c9dc", "#eeeeff"] },
+      "text": { "role": "neutral", "displayName": "Ivory", "canonical": "oklch(92.5% 0.006 84.6)", "tonalRamp": ["#0c0b0b", "#262527", "#434246", "#636168", "#84828c", "#a7a5b2", "#cbc9d9", "#f0eeff"] },
+      "text-2": { "role": "neutral", "displayName": "Ash", "canonical": "oklch(73.0% 0.013 259.8)", "tonalRamp": ["#080b11", "#21252e", "#3e424e", "#5d6170", "#7e8395", "#a0a5bb", "#c4c9e2", "#e9efff"] },
+      "text-3": { "role": "neutral", "displayName": "Slate", "canonical": "oklch(63.1% 0.017 257.2)", "tonalRamp": ["#070b13", "#202530", "#3c4250", "#5b6272", "#7c8397", "#9ea6bd", "#c2cae4", "#e7efff"] },
+      "amber": { "role": "primary", "displayName": "Signal Amber", "canonical": "oklch(76.7% 0.142 72.3)", "tonalRamp": ["#250000", "#461300", "#673318", "#8a5337", "#ae7558", "#d3987c", "#f9bca1", "#ffe2c8"] },
+      "amber-bright": { "role": "primary", "displayName": "Signal Amber Bright", "canonical": "oklch(82.6% 0.133 77.3)", "tonalRamp": ["#230000", "#431600", "#643616", "#865636", "#aa7757", "#cf9b7b", "#f5bfa0", "#ffe4c6"] },
+      "amber-ink": { "role": "primary", "displayName": "Amber Ink", "canonical": "oklch(20.6% 0.033 75.8)", "tonalRamp": ["#130904", "#2e231d", "#4c403b", "#6c5f5c", "#8e807f", "#b1a3a4", "#d6c7cb", "#fcecf3"] },
+      "amber-dim": { "role": "primary", "displayName": "Signal Amber Wash", "canonical": "rgba(234, 163, 60, 0.16)", "tonalRamp": ["#250000", "#461300", "#673318", "#8a5337", "#ae7558", "#d3987c", "#f9bca1", "#ffe2c8"] },
+      "amber-paper": { "role": "primary", "displayName": "Amber Paper", "canonical": "oklch(92.2% 0.040 79.5)", "tonalRamp": ["#140803", "#2f231a", "#4d4038", "#6e5f59", "#8f807c", "#b3a3a1", "#d7c7c7", "#fdecef"] },
+      "error": { "role": "tertiary", "displayName": "Fail Red", "canonical": "oklch(71.6% 0.144 26.4)", "tonalRamp": ["#2d0001", "#510013", "#751f31", "#9a4151", "#c06373", "#e78698", "#ffaabe", "#ffcfe5"] },
+      "error-dim": { "role": "tertiary", "displayName": "Fail Red Wash", "canonical": "rgba(240, 124, 114, 0.15)", "tonalRamp": ["#2d0001", "#510013", "#751f31", "#9a4151", "#c06373", "#e78698", "#ffaabe", "#ffcfe5"] },
+      "lamp-idle": { "role": "neutral", "displayName": "Idle Lamp", "canonical": "oklch(46.9% 0.016 258.4)", "tonalRamp": ["#070b13", "#202530", "#3d4250", "#5c6272", "#7c8396", "#9fa6bc", "#c3cae4", "#e8efff"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The single page statement line — h1 only." },
+      "title": { "displayName": "Title", "purpose": "Uppercase panel headers (0.14em letter-spacing)." },
+      "label": { "displayName": "Label", "purpose": "Uppercase engraved field labels and node-info keys (0.1em letter-spacing)." },
+      "body": { "displayName": "Body", "purpose": "Lede prose (max-width 46rem), detail values, summaries, runtime status." },
+      "code": { "displayName": "Code", "purpose": "Verbatim script code in bus nodes (0.66rem) and the .vpy editor (0.78rem, tab-size 2)." },
+      "caption": { "displayName": "Caption", "purpose": "Panel indexes, units, screen captions, file tags, keycap glyphs." }
+    },
+    "shadows": [
+      { "name": "panel-drop", "value": "0 0.4rem 1.6rem rgba(0, 0, 0, 0.22), inset 0 1px rgba(255, 255, 255, 0.03)", "purpose": "Resting depth under every equipment panel." },
+      { "name": "frame-drop", "value": "0 1rem 2.6rem rgba(0, 0, 0, 0.5)", "purpose": "Deep shadow under the rendered canvas inside the Program monitor." },
+      { "name": "screen-vignette", "value": "inset 0 0 2.5rem rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.05)", "purpose": "Recessed glass of the monitor screen." },
+      { "name": "route-ring", "value": "0 0 0 1px rgba(234, 163, 60, 0.16)", "purpose": "Amber seat ring on the selected bus node — the only colored shadow." },
+      { "name": "lamp-halo", "value": "0 0 0 0.18rem rgba(234, 163, 60, 0.16)", "purpose": "Glow halo around lit status lamps; white 5% when idle, red wash on error." }
+    ],
+    "motion": [
+      { "name": "ease-quick", "value": "130ms ease", "purpose": "State transitions: bus node border/background/box-shadow, Run button filter/transform." },
+      { "name": "pulse", "value": "1.1s ease-in-out infinite (50% opacity 0.35)", "purpose": "Rendering state lamp animation (output + runtime status)." },
+      { "name": "pulse-slow", "value": "1.6s ease-in-out infinite (50% opacity 0.35)", "purpose": "Worker loading lamp animation." },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion: all animations and transitions disabled", "purpose": "Mandatory: the pulse and every 130ms transition are suppressed." }
+    ],
+    "breakpoints": [
+      { "name": "narrow", "value": "56rem", "purpose": "Single column stack in DOM order: monitor → signal bus → inspector → script → diagnostics; bus links rotate vertical with amber triangle heads." },
+      { "name": "compact", "value": "28rem", "purpose": "Hide the BROWSER BUILD tag and keycap hints." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Run Button",
+      "kind": "button",
+      "refersTo": "run-button",
+      "description": "The single amber-filled action: runs the script record. Disabled until the worker is ready.",
+      "html": "<button class=\"ds-run-button\" type=\"button\">Run script<kbd class=\"ds-kbd\">Ctrl / \u2318 \u21b5</kbd></button>",
+      "css": ".ds-run-button{display:inline-flex;min-height:2.4rem;align-items:center;gap:0.6rem;border:1px solid #f0b055;border-radius:0.35rem;padding:0.45rem 0.7rem 0.45rem 0.9rem;background:linear-gradient(180deg,#f6ba58,#eaa33c);color:#201505;cursor:pointer;font:600 0.78rem/1 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace;letter-spacing:0.06em;transition:filter 130ms ease,transform 130ms ease}.ds-run-button:hover:not(:disabled){filter:brightness(1.07)}.ds-run-button:active:not(:disabled){transform:translateY(1px)}.ds-run-button:focus-visible{outline:2px solid #f6ba58;outline-offset:3px}.ds-run-button:disabled{cursor:not-allowed;opacity:0.4;filter:saturate(0.25)}.ds-kbd{border:1px solid rgba(32,21,5,0.35);border-radius:0.25rem;padding:0.12rem 0.3rem;background:rgba(32,21,5,0.12);color:#201505;font:400 0.64rem/1 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace}"
+    },
+    {
+      "name": "Signal Bus Node",
+      "kind": "custom",
+      "refersTo": "bus-node",
+      "description": "Signature selectable stage card (Source / Invert / Program Output) with lamp and verbatim code; amber-lit when pressed.",
+      "html": "<button class=\"ds-bus-node\" type=\"button\" aria-pressed=\"true\"><span class=\"ds-bus-name\"><span class=\"ds-bus-lamp\" aria-hidden=\"true\"></span>Source</span><span class=\"ds-bus-code\">std.BlankClip(width=320, height=180, format=vs.RGB24)</span></button>",
+      "css": ".ds-bus-node{display:flex;flex-direction:column;align-items:flex-start;gap:0.42rem;border:1px solid rgba(255,255,255,0.14);border-radius:0.4rem;padding:0.75rem 0.9rem;background:linear-gradient(180deg,#1d1f25,#17181d);color:#e8e6e2;cursor:pointer;text-align:left;font:400 0.66rem/1.5 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace;transition:border-color 130ms ease,background 130ms ease,box-shadow 130ms ease}.ds-bus-node:hover{border-color:rgba(255,255,255,0.26)}.ds-bus-node:hover .ds-bus-lamp{background:#8b919b}.ds-bus-node:focus-visible{outline:2px solid #eaa33c;outline-offset:2px}.ds-bus-name{display:inline-flex;align-items:center;gap:0.55rem;color:#e8e6e2;font-size:0.72rem;font-weight:600;letter-spacing:0.13em;text-transform:uppercase}.ds-bus-lamp{width:0.46rem;height:0.46rem;flex:0 0 auto;border-radius:50%;background:#555b64;box-shadow:0 0 0 0.18rem rgba(255,255,255,0.05)}.ds-bus-code{color:#838a94;overflow-wrap:anywhere}.ds-bus-node[aria-pressed=\"true\"]{border-color:#eaa33c;background:linear-gradient(180deg,rgba(234,163,60,0.09),rgba(234,163,60,0.03)),#17181d;box-shadow:0 0 0 1px rgba(234,163,60,0.16)}.ds-bus-node[aria-pressed=\"true\"] .ds-bus-lamp{background:#eaa33c;box-shadow:0 0 0 0.18rem rgba(234,163,60,0.16)}.ds-bus-node[aria-pressed=\"true\"] .ds-bus-name{color:#f4e3c8}"
+    },
+    {
+      "name": "Numeric Field",
+      "kind": "input",
+      "refersTo": "param-input",
+      "description": "Inspector parameter row: engraved uppercase label, right-aligned numeric value, slate unit.",
+      "html": "<div class=\"ds-numeric-field\"><label for=\"ds-w\">Width</label><input id=\"ds-w\" type=\"number\" min=\"16\" max=\"4096\" step=\"1\" value=\"320\"><span class=\"ds-unit\">px</span></div>",
+      "css": ".ds-numeric-field{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:0.55rem;padding:0.6rem 1rem}.ds-numeric-field label{color:#a3a8b0;font:600 0.68rem/1 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace;letter-spacing:0.1em;text-transform:uppercase}.ds-numeric-field input{width:6.2rem;border:1px solid rgba(255,255,255,0.14);border-radius:0.3rem;padding:0.38rem 0.5rem;background:#0e0f12;color:#e8e6e2;font:400 0.78rem/1.2 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace;text-align:right;caret-color:#eaa33c}.ds-numeric-field input:hover{border-color:rgba(255,255,255,0.24)}.ds-numeric-field input:focus-visible{outline:2px solid #eaa33c;outline-offset:2px;border-color:#eaa33c}.ds-unit{color:#838a94;font:400 0.64rem/1 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace}"
+    },
+    {
+      "name": "Output State Pill",
+      "kind": "chip",
+      "refersTo": "output-state",
+      "description": "Program monitor status capsule: lamp dot plus state label; ready = amber halo, error = red halo, rendering = pulse.",
+      "html": "<span class=\"ds-status-pill\" data-state=\"ready\"><span class=\"ds-lamp\" aria-hidden=\"true\"></span>awaiting render</span>",
+      "css": ".ds-status-pill{display:inline-flex;align-items:center;gap:0.5rem;border:1px solid rgba(255,255,255,0.14);border-radius:999px;padding:0.32rem 0.6rem;background:rgba(255,255,255,0.02);color:#a3a8b0;font:400 0.68rem/1 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace}.ds-lamp{width:0.44rem;height:0.44rem;border-radius:50%;background:#555b64;box-shadow:0 0 0 0.18rem rgba(255,255,255,0.05)}.ds-status-pill[data-state=\"ready\"] .ds-lamp{background:#eaa33c;box-shadow:0 0 0 0.18rem rgba(234,163,60,0.16)}.ds-status-pill[data-state=\"rendering\"] .ds-lamp{background:#eaa33c;box-shadow:0 0 0 0.18rem rgba(234,163,60,0.16);animation:pulse 1.1s ease-in-out infinite}.ds-status-pill[data-state=\"error\"] .ds-lamp{background:#f07c72;box-shadow:0 0 0 0.18rem rgba(240,124,114,0.15)}@keyframes pulse{50%{opacity:0.35}}@media (prefers-reduced-motion: reduce){.ds-status-pill *{animation:none!important;transition:none!important}}"
+    },
+    {
+      "name": "Equipment Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Rack module container with engraved header strip; used for monitor, bus, inspector, script, diagnostics.",
+      "html": "<section class=\"ds-panel\"><header class=\"ds-panel-head\"><span class=\"ds-panel-index\" aria-hidden=\"true\">01</span><h2 class=\"ds-panel-title\">Program monitor</h2></header><div class=\"ds-panel-body\"></div></section>",
+      "css": ".ds-panel{border:1px solid rgba(255,255,255,0.075);border-radius:0.5rem;background:#131418;box-shadow:0 0.4rem 1.6rem rgba(0,0,0,0.22),inset 0 1px rgba(255,255,255,0.03);overflow:hidden}.ds-panel-head{display:flex;align-items:center;gap:0.6rem;min-height:2.9rem;padding:0 0.9rem;border-bottom:1px solid rgba(255,255,255,0.075);background:linear-gradient(180deg,rgba(255,255,255,0.028),rgba(255,255,255,0.008))}.ds-panel-index{color:#838a94;font:400 0.64rem/1 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace;letter-spacing:0.08em}.ds-panel-title{margin:0;color:#a3a8b0;font:600 0.7rem/1 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace;letter-spacing:0.14em;text-transform:uppercase}.ds-panel-body{min-height:4rem}"
+    },
+    {
+      "name": "Script Editor",
+      "kind": "input",
+      "refersTo": "script-editor",
+      "description": "Recessed .vpy record: borderless charcoal well, verbatim mono code, amber caret and inset focus ring.",
+      "html": "<textarea class=\"ds-script-editor\" spellcheck=\"false\">import vapoursynth as vs\n\nblank = await vs.core.std.BlankClip(width=320, height=180, format=vs.RGB24)\ninverted = await vs.core.std.Invert(blank)\nawait vs.set_output(0, inverted)</textarea>",
+      "css": ".ds-script-editor{display:block;width:100%;min-height:14rem;max-height:26rem;resize:vertical;border:0;outline:0;padding:1rem 1.1rem;background:#0e0f12;color:#e8e6e2;caret-color:#eaa33c;font:400 0.78rem/1.7 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace;tab-size:2}.ds-script-editor::selection{background:rgba(234,163,60,0.16)}.ds-script-editor:focus-visible{outline:none;box-shadow:inset 0 0 0 1px #eaa33c}"
+    },
+    {
+      "name": "Graph Status Pill",
+      "kind": "chip",
+      "refersTo": "graph-status",
+      "description": "Script record readiness capsule: amber text and self-lit lamp inside an amber wash border.",
+      "html": "<span class=\"ds-graph-status\">READY</span>",
+      "css": ".ds-graph-status{display:inline-flex;align-items:center;gap:0.45rem;border:1px solid rgba(234,163,60,0.16);border-radius:999px;padding:0.28rem 0.55rem;color:#eaa33c;font:600 0.64rem/1 ui-monospace,\"SF Mono\",SFMono-Regular,Menlo,Consolas,\"Liberation Mono\",monospace;letter-spacing:0.1em}.ds-graph-status::before{content:\"\";width:0.4rem;height:0.4rem;border-radius:50%;background:#eaa33c;box-shadow:0 0 0 0.15rem rgba(234,163,60,0.16)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Night Control Room",
+    "overview": "This is a broadcast production desk, not a code editor with a preview attached. The workspace is a night control room: graphite equipment surfaces stacked in a rack, a dominating Program monitor, a literal signal bus carrying Source \u2192 Invert \u2192 Program Output, a focused parameter inspector, and the .vpy script as a technical record rather than the primary composition. Signal amber is the only active-route accent; everything at rest is graphite, hairline-divided, and lit like an idle broadcast suite awaiting a take.\n\nDensity is high and uniform. Every label is a small uppercase, letter-spaced engraving; every real value, expression, and code sample is verbatim monospace text on a dark field. Depth comes from tonal layering of graphite surfaces and dark ambient shadow, never from color. The world is deliberately quiet: no gradients of hue, no display faces, no decorative illustration \u2014 the frame output and the amber route are the only things allowed to glow.\n\nMotion is a state language, not decoration: 130ms ease transitions for route selection, a single pulse animation for \"rendering\" states, everything suppressed under prefers-reduced-motion. Keyboard operation is first-class \u2014 every bus stage is a real button, focus is always a 2px amber ring, and status is announced with aria-live.",
+    "keyCharacteristics": [
+      "Graphite equipment racks: dark neutral surfaces (#131418 family) with 1px white hairlines (7.5% / 14% alpha) and 0.5rem-radius corners.",
+      "Signal amber (#eaa33c) as the sole active-route accent \u2014 selection, route links, lit lamps, focus rings, carets, and the Run action.",
+      "Monospace-only typography, from the 0.64rem captions to the clamp(1.5rem, 2.4vw, 2.1rem) statement line.",
+      "A visible signal bus: three selectable stage nodes joined by amber arrows, not abstract tabs.",
+      "Status lamps everywhere: small circles with translucent halos that switch idle gray \u2192 amber \u2192 error red.",
+      "Flat at rest, dark ambient shadows only; amber appears as a ring or halo, never a glow field."
+    ],
+    "rules": [
+      { "name": "The Signal Amber Rule", "body": "Amber is the sole active-route accent. Its legal appearances are: the selected bus node (border, lamp, ring, name), bus links, lit status lamps, focus outlines, the caret, text selection, and the Run action. Anything else in amber is a routing violation.", "section": "colors" },
+      { "name": "The Fail Red Rule", "body": "Red means \"the run failed\" \u2014 nothing else. Idle and ready states are gray and amber; red never decorates, it only reports.", "section": "colors" },
+      { "name": "The Monospace-Only Rule", "body": "Every glyph on the surface is the mono stack \u2014 headings, labels, values, and code alike. A proportional or display face is off-world; when something must stand out, it earns size, weight, or amber instead.", "section": "typography" },
+      { "name": "The Engraving Rule", "body": "Labels are engraved, not written: uppercase, 600 weight, 0.1em+ letter-spacing, and never larger than 0.72rem. Title case and sentence case belong to code and to the page statement only.", "section": "typography" },
+      { "name": "The Flat-At-Rest Rule", "body": "Panels are flat at rest. The only allowed shadows are the dark ambient panel/frame drops and inner highlights; the only colored \"shadow\" in the system is the amber route ring and lamp halos on the active route.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Signal Amber (#eaa33c) for the active route and only the active route: selected bus node, bus links, lit lamps, focus rings, carets, selection, and the Run button.",
+      "Do keep every equipment module graphite: Panel #131418, Raised #17181d, Highlight #1d1f25, with 1px hairlines (7.5% white resting, 14% white interactive).",
+      "Do give every status indicator the lamp treatment: 0.4\u20130.46rem circle with a 0.18rem halo, switching idle gray (#555b64) \u2192 amber \u2192 red.",
+      "Do engrave labels: uppercase, 600 weight, 0.1em+ letter-spacing, never above 0.72rem.",
+      "Do set focus visibly everywhere with the 2px amber outline at 2px offset (the Run button at 3px, the script editor as an inset 1px amber shadow).",
+      "Do write real code verbatim in monospace \u2014 bus node captions and the .vpy record \u2014 and keep tab-size: 2 in the editor.",
+      "Do honor prefers-reduced-motion: the pulse and all 130ms transitions switch off.",
+      "Do announce state changes with aria-live and keep DOM order equal to visual order."
+    ],
+    "donts": [
+      "Don't introduce a second accent hue. Red (#f07c72) exists only for failed runs; idle, ready, and active states are gray and amber.",
+      "Don't paint large amber fields \u2014 the Run button is the only amber fill, and its label is Amber Ink (#201505).",
+      "Don't use shadows for elevation beyond the dark ambient panel drop and the monitor's inset vignette; amber depth is a 1px ring and lamp halos only.",
+      "Don't add display or proportional fonts \u2014 the mono stack is the entire type system.",
+      "Don't invent signal-bus stages. The bus is exactly Source \u2192 Invert \u2192 Program Output, each a real supported VapourSynth operation rendered as its actual code.",
+      "Don't change the corner language: 0.3rem controls, 0.4rem bus nodes, 0.5rem panels, 999px status pills.",
+      "Don't smooth the frame canvas \u2014 image-rendering: pixelated is the honest rendering of RGBA8 worker output."
+    ]
+  }
+}

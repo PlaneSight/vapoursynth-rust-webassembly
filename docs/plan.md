@@ -66,11 +66,26 @@ Exit criteria:
 
 ## Milestone 1c — Browser worker and canvas
 
+**Status:** worker protocol candidate; the Emscripten module adapter and browser harness remain.
+
 Add a dedicated worker, transferable frame buffers, minimal canvas presentation, and an explicit request protocol. The worker is the only JavaScript-facing owner of the Emscripten module; messages contain request identifiers, data, and structured errors rather than native pointers.
+
+The isolated `vapoursynth-wasm-host` crate now defines a stateful `WorkerSession`, non-zero request identifiers, versioned capability records, deterministic dimension validation, and structured failures. It deliberately reports `upstreamLinked: false`: the `wasm32-unknown-unknown` protocol crate is not the Emscripten runtime and must not imply otherwise.
+
+Next slice:
+
+1. Export the Emscripten module as an ES module suitable for a dedicated module worker.
+2. Add a small worker adapter that creates exactly one runtime and one `WorkerSession`.
+3. Correlate every command and response with a non-zero request identifier.
+4. Transfer completed RGBA8 `ArrayBuffer` values rather than copying them through structured cloning.
+5. Add a browser smoke that renders the verified 37×19 white frame onto a canvas.
+6. Prove worker shutdown releases frames, nodes, then the core without stale callbacks.
 
 ## Milestone 2 — Invocation and graph semantics
 
 Implement typed argument maps and plugin/function lookup sufficient for `std.BlankClip`, `std.Invert`, and one resize operation. Add differential conformance tests against pinned native VapourSynth outputs.
+
+Use the public domain model of `vapoursynth4-rs` and `rust-av/vapoursynth-rs` as comparative prior art for owned and borrowed resources, maps, plugins, functions, nodes, frames, formats, and VSScript behavior. Do not inherit their native-linking assumptions: browser Rust retains opaque tokens only, while C++ owns all upstream pointers and the `VSAPI` table.
 
 ## Milestone 3 — Pyodide `.vpy` authoring
 

@@ -57,9 +57,8 @@ impl WorkerSession {
             ));
         }
 
-        rgba8_byte_len(width, height).map_err(|message| {
-            worker_error(request_id, "invalid-dimensions", message)
-        })?;
+        rgba8_byte_len(width, height)
+            .map_err(|message| worker_error(request_id, "invalid-dimensions", message))?;
 
         Err(worker_error(
             request_id,

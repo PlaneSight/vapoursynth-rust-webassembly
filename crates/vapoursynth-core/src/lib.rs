@@ -6,6 +6,9 @@
 
 #![cfg_attr(target_os = "emscripten", no_std)]
 
+/// Allocation-free typed arguments for generic plugin invocation.
+pub mod invocation;
+
 use vapoursynth_sys::browser;
 
 // The Emscripten build passes `-Cpanic=abort`. A no-`std` static library still

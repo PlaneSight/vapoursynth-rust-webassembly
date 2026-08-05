@@ -55,14 +55,40 @@ The smoke tests verify every output pixel is opaque white. The input is the upst
 
 ## Building the browser runtime
 
-The build needs Rust 1.85.0 with the `wasm32-unknown-emscripten` target, Python 3.11+, Git, Meson 1.3.2, Node, and Emscripten SDK 3.1.68 on `PATH`.
+The build needs UV 0.12.1+, Rust 1.85.0 with the `wasm32-unknown-emscripten` target, Git, Node, and Emscripten SDK 3.1.68 on `PATH`. UV pins Python 3.11 and Meson 1.3.2 from `pyproject.toml` and `uv.lock`; do not install Meson with `pip` or as a global tool.
 
 ```bash
 git submodule update --init --recursive
-tools/build-browser.sh
+uv sync --locked
+uv run --locked bash tools/build-browser.sh
 ```
 
-The script applies the locked upstream patch, configures `build/browser`, builds the direct C++ smoke, safe Rust smoke, and worker-owned ES module, then runs their Node tests. Open `web/index.html` through a local HTTP server after building to exercise the minimal canvas harness.
+The script applies the locked upstream patch, configures `build/browser`, builds the direct C++ smoke, safe Rust smoke, and worker-owned ES module, then runs their Node tests. Open `web/index.html` through a local HTTP server after building to exercise the canvas harness:
+
+```bash
+uv run --locked python -m http.server 4173
+```
+
+Open `http://localhost:4173/web/index.html` in a browser. The demo requires HTTP because it uses ES modules and nested workers.
+
+## Reproducible command entry points
+
+UV is the project entry point for Python, Meson, and all documented test and build commands. Cargo and npm still own their native dependency graphs (`Cargo.lock` and `package-lock.json`), but invoke them through UV so the Python tool environment is always locked and synchronized first.
+
+```bash
+# One-time Node dependency installation for the web test suite.
+uv run --locked bash -lc 'npm ci'
+
+# Focused suites.
+uv run --locked node --test web/*.test.mjs
+uv run --locked python -m unittest discover -s web/python -p 'test_*.py'
+uv run --locked cargo test --locked --workspace
+
+# Verify the Python/Meson lock without changing it.
+uv lock --check
+```
+
+Equivalent npm shortcuts are available as `npm run test:web`, `npm run test:python`, `npm run test:rust`, `npm run build:browser`, and `npm run serve:web`; each delegates to the locked UV command. Do not use bare `python`, `python3`, `pip`, or a global Meson installation for project work.
 
 ## Authoring a `.vpy`
 

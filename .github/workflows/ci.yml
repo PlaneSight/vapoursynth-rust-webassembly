@@ -17,7 +17,6 @@ permissions:
 env:
   RUST_VERSION: 1.85.0
   EMSCRIPTEN_VERSION: 3.1.68
-  MESON_VERSION: 1.3.2
 
 jobs:
   rust:
@@ -25,6 +24,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.1"
+          enable-cache: true
+      - name: Sync UV tools
+        run: uv sync --locked
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: rustfmt, clippy
@@ -33,7 +41,7 @@ jobs:
         with:
           node-version: 22
       - name: Install web test dependencies
-        run: npm ci
+        run: uv run --locked bash -lc 'npm ci'
       # Cache keys include the pinned compiler and dependency lockfile.
       - name: Restore Rust cache
         uses: actions/cache@v4
@@ -46,17 +54,17 @@ jobs:
           restore-keys: |
             rust-${{ runner.os }}-${{ env.RUST_VERSION }}-native-
       - name: Format
-        run: cargo fmt --all --check
+        run: uv run --locked cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: uv run --locked cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test Rust workspace
-        run: cargo test --locked --workspace
+        run: uv run --locked cargo test --locked --workspace
       - name: Test worker runtime
-        run: npm run test:web
+        run: uv run --locked node --test web/*.test.mjs
       - name: Test Python authoring package
-        run: npm run test:python
+        run: uv run --locked python -m unittest discover -s web/python -p test_*.py
       - name: Compile isolated wasm-bindgen scaffold
-        run: cargo check --locked -p vapoursynth-wasm-host --target wasm32-unknown-unknown
+        run: uv run --locked cargo check --locked -p vapoursynth-wasm-host --target wasm32-unknown-unknown
 
   browser-spike:
     runs-on: ubuntu-latest
@@ -68,6 +76,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.1"
+          enable-cache: true
+      - name: Sync UV tools
+        run: uv sync --locked
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: clippy
@@ -78,8 +95,7 @@ jobs:
         with:
           path: |
             .ci/emsdk
-            ~/.cache/pip
-          key: browser-toolchain-${{ runner.os }}-emscripten-${{ env.EMSCRIPTEN_VERSION }}-meson-${{ env.MESON_VERSION }}
+          key: browser-toolchain-${{ runner.os }}-emscripten-${{ env.EMSCRIPTEN_VERSION }}-${{ hashFiles('uv.lock') }}
       - name: Restore Emscripten Rust cache
         uses: actions/cache@v4
         with:
@@ -90,10 +106,6 @@ jobs:
           key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-emscripten-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             rust-${{ runner.os }}-${{ env.RUST_VERSION }}-emscripten-
-      - name: Install Meson
-        run: |
-          python3 -m pip install --user "meson==$MESON_VERSION"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install Emscripten
         if: steps.browser-toolchain-cache.outputs.cache-hit != 'true'
         run: |
@@ -108,7 +120,7 @@ jobs:
       - name: Lint Emscripten Rust ownership layer
         run: |
           source "$EMSDK/emsdk_env.sh"
-          RUSTFLAGS=-Cpanic=abort cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
+          RUSTFLAGS=-Cpanic=abort uv run --locked cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
       - name: Verify Emscripten executable wrapper
         run: |
           source "$EMSDK/emsdk_env.sh"
@@ -119,7 +131,7 @@ jobs:
         run: |
           source "$EMSDK/emsdk_env.sh"
           bash toolchains/emscripten-node.test.sh
-          if ! tools/build-browser.sh; then
+          if ! uv run --locked bash tools/build-browser.sh; then
             cat build/browser/meson-logs/meson-log.txt
             exit 1
           fi

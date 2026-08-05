@@ -19,7 +19,7 @@ cd "$repository_root"
 export CARGO_TARGET_DIR="$cargo_target_directory"
 export CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER=emcc
 export RUSTFLAGS="-Cpanic=abort"
-cargo build --locked --package vapoursynth-core --target wasm32-unknown-emscripten
+uv run --locked cargo build --locked --package vapoursynth-core --target wasm32-unknown-emscripten
 
 if [[ ! -f "$core_archive" ]]; then
     echo "Rust ownership archive was not produced: $core_archive" >&2

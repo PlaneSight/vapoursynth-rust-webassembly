@@ -124,4 +124,4 @@ The current supported subset is exactly `vs.RGB24`, `vs.core.std.BlankClip`, `vs
 
 ## License
 
-No project license has been selected yet. Vendored dependencies retain their own licenses. Add a project license before distributing releases.
+Repository-authored code is licensed under the [MIT License](LICENSE). Vendored dependencies retain their own licenses; see `third_party/lock.toml` and their source trees for the applicable terms.

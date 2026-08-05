@@ -160,6 +160,9 @@ A two-voice palette: graphite neutrals carry all resting structure and text; sig
 ### Tertiary
 - **Fail Red** (#f07c72): error states only — error output/runtime lamps and halos (rgba(240,124,114,0.15)). The diagnostics log writes errors in #ff9a9a and warnings in #e9c46a.
 
+### Light Mode
+The control desk defaults to the night-control-room theme. The topbar's **Light mode** button switches to a daylight-equipment treatment and persists the explicit selection in `localStorage` under `vapoursynth-theme`; it changes label to **Dark mode** and exposes the state through `aria-pressed`. Light mode uses warm paper (#f2efe8), ivory panels (#fcfaf5), dark engraved text (#29231b), and an umber signal accent (#965b08). The Program monitor remains dark so rendered RGBA output retains a stable viewing field in either ambient condition.
+
 ### Named Rules
 **The Signal Amber Rule.** Amber is the sole active-route accent. Its legal appearances are: the selected bus node (border, lamp, ring, name), bus links, lit status lamps, focus outlines, the caret, text selection, and the Run action. Anything else in amber is a routing violation.
 
@@ -254,7 +257,7 @@ The recurring silhouette is the status lamp: a 0.4–0.46rem circle with a 0.18r
 - A `details` panel whose summary is a lamp-carrying uppercase row (0.7rem / 600 / 0.12em); the log is a slate pre-wrap block (0.7rem / 1.55) with colored lines — info ash, warn #e9c46a, error #ff9a9a. The clear button is a quiet text control (0.68rem) whose hairline strengthens on hover.
 
 ### Topbar
-- Brand row: a 1.7rem "VS" mark — 145deg graphite gradient square with amber-dim border and 0.35rem radius, amber glyph — beside the product name (0.82rem / 600). The BROWSER BUILD tag is a 999px capsule, 0.64rem / 0.14em, slate, 7.5% hairline.
+- Brand row: a 1.7rem "VS" mark — 145deg graphite gradient square with amber-dim border and 0.35rem radius, amber glyph — beside the product name (0.82rem / 600). The BROWSER BUILD tag is a 999px capsule, 0.64rem / 0.14em, slate, 7.5% hairline. A compact adjacent theme button is an explicit two-state control: **Light mode** in the default dark scheme; **Dark mode** when `aria-pressed="true"` in the persisted light scheme.
 
 ## Do's and Don'ts
 

@@ -4,6 +4,8 @@ import { PyodideWorkerClient } from "../runtime/pyodide/client.mjs";
 const canvas = document.querySelector("canvas");
 const source = document.querySelector("textarea");
 const run = document.querySelector(".run-button");
+const themeToggle = document.querySelector(".theme-toggle");
+const themeColor = document.querySelector('meta[name="theme-color"]');
 const runLabel = document.querySelector("[data-run-label]");
 const status = document.querySelector("[data-status-text]");
 const runtimeStatus = document.querySelector("[data-runtime-status]");
@@ -53,6 +55,34 @@ function updateRunControl() {
   runLabel.textContent = rendering ? "Rendering…" : "Run script";
   run.setAttribute("aria-busy", String(rendering));
 }
+
+function setTheme(theme) {
+  const light = theme === "light";
+  document.documentElement.dataset.theme = light ? "light" : "dark";
+  themeToggle?.setAttribute("aria-pressed", String(light));
+  if (themeToggle) themeToggle.textContent = light ? "Dark mode" : "Light mode";
+  if (themeColor) themeColor.content = light ? "#f2efe8" : "#0d0e10";
+}
+
+function savedTheme() {
+  try {
+    return localStorage.getItem("vapoursynth-theme") === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+setTheme(savedTheme());
+
+themeToggle?.addEventListener("click", () => {
+  const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  setTheme(nextTheme);
+  try {
+    localStorage.setItem("vapoursynth-theme", nextTheme);
+  } catch {
+    // Theme selection remains active for this page when storage is unavailable.
+  }
+});
 
 async function refreshStatus() {
   setStatus("Starting browser workers…", "rendering");

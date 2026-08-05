@@ -9,9 +9,12 @@
       :root {
         color-scheme: dark;
         --bg: #0d0e10;
+        --body-top: #101114;
+        --body-bloom: rgba(255, 255, 255, 0.045);
         --surface-0: #131418;
         --surface-1: #17181d;
         --surface-2: #1d1f25;
+        --field: #0e0f12;
         --line: rgba(255, 255, 255, 0.075);
         --line-strong: rgba(255, 255, 255, 0.14);
         --text: #e8e6e2;
@@ -29,6 +32,28 @@
         color: var(--text);
       }
 
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg: #f2efe8;
+        --body-top: #fbf8f2;
+        --body-bloom: rgba(255, 255, 255, 0.48);
+        --surface-0: #fcfaf5;
+        --surface-1: #f1ede4;
+        --surface-2: #e7e1d5;
+        --field: #f6f2ea;
+        --line: rgba(50, 42, 31, 0.14);
+        --line-strong: rgba(50, 42, 31, 0.26);
+        --text: #29231b;
+        --text-2: #5e5549;
+        --text-3: #756b5e;
+        --amber: #965b08;
+        --amber-bright: #b5700b;
+        --amber-ink: #1f1405;
+        --amber-dim: rgba(150, 91, 8, 0.18);
+        --error: #ad3a34;
+        --error-dim: rgba(173, 58, 52, 0.15);
+      }
+
       * { box-sizing: border-box; }
 
       body {
@@ -36,8 +61,8 @@
         min-height: 100vh;
         margin: 0;
         background:
-          radial-gradient(64rem 36rem at 50% -14rem, rgba(255, 255, 255, 0.045), transparent 62%),
-          linear-gradient(180deg, #101114 0%, #0d0e10 26rem);
+          radial-gradient(64rem 36rem at 50% -14rem, var(--body-bloom), transparent 62%),
+          linear-gradient(180deg, var(--body-top) 0%, var(--bg) 26rem);
       }
 
       button, textarea, input { font: inherit; }
@@ -122,6 +147,29 @@
         letter-spacing: 0.14em;
         line-height: 1;
       }
+
+      .topbar-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .theme-toggle {
+        min-height: 1.9rem;
+        border: 1px solid var(--line-strong);
+        border-radius: 0.3rem;
+        padding: 0.32rem 0.52rem;
+        background: transparent;
+        color: var(--text-2);
+        cursor: pointer;
+        font-size: 0.64rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .theme-toggle:hover { border-color: var(--amber); color: var(--text); }
+      .theme-toggle[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
 
       .intro { margin: 0 0 1.4rem; }
 
@@ -440,7 +488,7 @@
         border: 1px solid var(--line-strong);
         border-radius: 0.3rem;
         padding: 0.38rem 0.5rem;
-        background: #0e0f12;
+        background: var(--field);
         color: var(--text);
         font-size: 0.78rem;
         text-align: right;
@@ -525,7 +573,7 @@
         border: 0;
         outline: 0;
         padding: 1rem 1.1rem;
-        background: #0e0f12;
+        background: var(--field);
         color: var(--text);
         caret-color: var(--amber);
         font-size: 0.78rem;
@@ -750,7 +798,10 @@
     <main class="app-shell">
       <header class="topbar">
         <div class="brand"><span class="brand-mark" aria-hidden="true">VS</span><span>VapourSynth WebAssembly</span></div>
-        <span class="build-tag">BROWSER BUILD</span>
+        <div class="topbar-actions">
+          <span class="build-tag">BROWSER BUILD</span>
+          <button class="theme-toggle" type="button" aria-pressed="false">Light mode</button>
+        </div>
       </header>
 
       <section class="intro" aria-labelledby="page-title">

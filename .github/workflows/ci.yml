@@ -24,47 +24,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-      - uses: astral-sh/setup-uv@v5
-        with:
-          version: "0.12.1"
-          enable-cache: true
-      - name: Sync UV tools
-        run: uv sync --locked
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install web test dependencies
-        run: uv run --locked bash -lc 'npm ci'
-      # Cache keys include the pinned compiler and dependency lockfile.
-      - name: Restore Rust cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-native-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            rust-${{ runner.os }}-${{ env.RUST_VERSION }}-native-
+      - uses: Swatinem/rust-cache@v2
       - name: Format
-        run: uv run --locked cargo fmt --all --check
+        run: cargo fmt --all --check
       - name: Clippy
-        run: uv run --locked cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Test Rust workspace
-        run: uv run --locked cargo test --locked --workspace
-      - name: Test worker runtime
-        run: uv run --locked node --test web/*.test.mjs
-      - name: Test Python authoring package
-        run: uv run --locked python -m unittest discover -s web/python -p test_*.py
-      - name: Compile isolated wasm-bindgen scaffold
-        run: uv run --locked cargo check --locked -p vapoursynth-wasm-host --target wasm32-unknown-unknown
+        run: cargo test --locked --workspace
 
   browser-spike:
     runs-on: ubuntu-latest

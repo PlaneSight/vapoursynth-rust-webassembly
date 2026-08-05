@@ -104,6 +104,10 @@ jobs:
           "$EMSDK/emsdk" activate "$EMSCRIPTEN_VERSION"
           echo "$EMSDK/upstream/emscripten" >> "$GITHUB_PATH"
       - name: Lint Emscripten Rust ownership layer
-        run: RUSTFLAGS=-Cpanic=abort cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
+        run: |
+          source "$EMSDK/emsdk_env.sh"
+          RUSTFLAGS=-Cpanic=abort cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
       - name: Build upstream browser smoke
-        run: tools/build-browser.sh
+        run: |
+          source "$EMSDK/emsdk_env.sh"
+          tools/build-browser.sh

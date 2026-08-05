@@ -30,6 +30,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install web test dependencies
+        run: npm ci
       # Cache keys include the pinned compiler and dependency lockfile.
       - name: Restore Rust cache
         uses: actions/cache@v4
@@ -48,7 +50,9 @@ jobs:
       - name: Test Rust workspace
         run: cargo test --locked --workspace
       - name: Test worker runtime
-        run: node --test web/*.test.mjs
+        run: npm run test:web
+      - name: Test Python authoring package
+        run: npm run test:python
       - name: Compile isolated wasm-bindgen scaffold
         run: cargo check --locked -p vapoursynth-wasm-host --target wasm32-unknown-unknown
 

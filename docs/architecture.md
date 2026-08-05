@@ -42,7 +42,7 @@ Owns UI state, editor state, canvas presentation, and request coordination. It m
 
 ### Python worker
 
-Will host Pyodide and a deliberately supported `vapoursynth` API subset. Python values carry opaque worker handles, not frame buffers or native pointers.
+Hosts pinned Pyodide and the deliberately supported asynchronous `vapoursynth` API subset. It creates a nested VapourSynth worker and communicates with it through the same correlated request protocol used by the main thread. Python values carry opaque worker handles, not frame buffers or native pointers. Each `.vpy` evaluation receives a fresh Python globals dictionary and a fresh graph state; selected outputs retain their graph until the next script or worker shutdown.
 
 ### VapourSynth worker
 
@@ -69,6 +69,7 @@ The initial frame transport copies one RGBA8 frame. A worker protocol will move 
 - Token slots are generation-checked before reuse and retired permanently if their generation would wrap.
 - Worker shutdown releases retained resources deterministically.
 - Python finalizers may request release, but correctness cannot depend on prompt garbage collection.
+- The Python module exposes only `RGB24`, `core.std.BlankClip`, `core.std.Invert`, `VideoNode`, and `set_output()` today. All calls are awaitable because they cross the worker boundary.
 
 ## Plugin model
 

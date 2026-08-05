@@ -2,41 +2,96 @@ import { drawRgbaFrame } from "./worker-client.mjs";
 import { PyodideWorkerClient } from "./pyodide-worker-client.mjs";
 
 const canvas = document.querySelector("canvas");
-const status = document.querySelector("output");
-const run = document.querySelector("button");
 const source = document.querySelector("textarea");
+const run = document.querySelector("button");
+const runLabel = document.querySelector("[data-run-label]");
+const status = document.querySelector("[data-status-text]");
+const runtimeStatus = document.querySelector("[data-runtime-status]");
+const outputState = document.querySelector("[data-output-state]");
 const worker = new Worker(new URL("./pyodide.worker.mjs", import.meta.url), {
   type: "module",
 });
 const client = new PyodideWorkerClient(worker);
 
-async function refreshStatus() {
-  const capabilities = await client.status();
-  status.value = capabilities.upstreamLinked
-    ? "Pyodide and VapourSynth runtimes ready"
-    : "Pyodide worker ready; Emscripten runtime not attached";
-  run.disabled = !capabilities.upstreamLinked;
+let runtimeReady = false;
+let rendering = false;
+
+function setStatus(message, state) {
+  status.textContent = message;
+  runtimeStatus.dataset.state = state;
 }
 
-run.addEventListener("click", async () => {
-  run.disabled = true;
+function setOutputState(message, state) {
+  outputState.textContent = message;
+  outputState.dataset.state = state;
+}
+
+function updateRunControl() {
+  run.disabled = !runtimeReady || rendering;
+  runLabel.textContent = rendering ? "Rendering…" : "Run script";
+  run.setAttribute("aria-busy", String(rendering));
+}
+
+async function refreshStatus() {
+  setStatus("Starting browser workers…", "rendering");
+  const capabilities = await client.status();
+  runtimeReady = capabilities.upstreamLinked;
+
+  if (runtimeReady) {
+    setStatus("Runtime ready · output 0 is available", "ready");
+    setOutputState("ready", "ready");
+  } else {
+    setStatus("Pyodide ready · Emscripten runtime not attached", "idle");
+    setOutputState("runtime unavailable", "idle");
+  }
+
+  updateRunControl();
+}
+
+async function renderScript() {
+  if (!runtimeReady || rendering) {
+    return;
+  }
+
+  rendering = true;
+  setStatus("Executing editor.vpy…", "rendering");
+  setOutputState("rendering", "rendering");
+  updateRunControl();
+
   try {
     const { outputs } = await client.runScript(source.value, "editor.vpy");
     const output = outputs.find(({ index }) => index === 0);
     if (!output) {
       throw new Error("the script did not register output 0 with await vs.set_output(0, node)");
     }
+
     const frame = await client.renderOutput(output.index);
     drawRgbaFrame(canvas, frame);
-    status.value = `Rendered ${frame.width}×${frame.height} RGBA8`;
+    const dimensions = `${frame.width}×${frame.height}`;
+    setStatus(`Rendered ${dimensions} RGBA8`, "ready");
+    setOutputState(dimensions, "ready");
   } catch (error) {
-    status.value = `${error.code ?? "error"}: ${error.message}`;
+    const message = `${error.code ?? "error"}: ${error.message}`;
+    setStatus(message, "error");
+    setOutputState("render failed", "error");
   } finally {
-    run.disabled = false;
+    rendering = false;
+    updateRunControl();
+  }
+}
+
+run.addEventListener("click", renderScript);
+source.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    void renderScript();
   }
 });
 
 window.addEventListener("pagehide", () => client.close(), { once: true });
 refreshStatus().catch((error) => {
-  status.value = `startup-error: ${error.message}`;
+  runtimeReady = false;
+  setStatus(`startup-error: ${error.message}`, "error");
+  setOutputState("startup failed", "error");
+  updateRunControl();
 });

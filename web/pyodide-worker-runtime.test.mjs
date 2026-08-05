@@ -77,38 +77,123 @@ test("releases the Pyodide session and worker scope on shutdown", () => {
   let closed = false;
   const scope = {
     postMessage() {},
-    close() }õöÚ$z{-®éÜj×\›ˆš[\ÜÝ˜\Ý\œÞ[ÜœÈŽÂˆKˆÛ‘XYÛ›ÜÝXÊY\ÜØYÙJHÂˆXYÛ›ÜÝXÜËœ\Ú
-Y\ÜØYÙJNÂˆKˆJNÂ‚ˆ\ÜÙ\™\]X[
-[š]X[^™YYJNÂˆ\ÜÙ\™\]X[
-\[ÙˆØÛÜK›Û›Y\ÜØYÙK™[˜Ý[ÛˆŠNÂˆ\ÜÙ\™Y\\]X[
-XYÛ›ÜÝXÜËÂˆÜ™X][™È™\ÝY˜\Ý\”Þ[ÛÜšÙ\ˆ‹ˆ”[ÙYHØYY‹ˆ”]Ûˆ]]Üš[™ÈXÚØYÙHØYY‹ˆ’[š]X[^š[™È]Ûˆ]]Üš[™ÈÙ\ÜÚ[Ûˆ‹ˆ”]Ûˆ]]Üš[™ÈÙ\ÜÚ[Ûˆ[š]X[^™Y‹ˆJNÂˆÝÜ
+    close() {
+      closed = true;
+    },
+  };
+  const stop = installPyodideWorkerRuntime(scope, {
+    ...session(),
+    free() {
+      freed = true;
+    },
+  });
 
-NÂˆ\ÜÙ\™\]X[
-™\ÝYÛÜšÙ\•\›Z[˜]YYJNÂŸJNÂ‚\Ý
-™›ÜØ\™ÈÛÜšÙ\ˆ›ÛÝÝ˜\XYÛ›ÜÝXÜÈÚ]Ý]™X][™È[H\È™\ÜÛœÙ\È‹
+  stop();
+  assert.equal(scope.onmessage, null);
+  assert.equal(freed, true);
+  assert.equal(closed, true);
+});
 
-HOˆÂˆÛÛœÝXYÛ›ÜÝXÜÈH×NÂˆÛÛœÝÛÜšÙ\ˆHÂˆÜÝY\ÜØYÙJ
-HßKˆ\›Z[˜]J
-HßKˆNÂˆÛÛœÝÛY[H™]È[ÙYUÛÜšÙ\ÛY[
-ÛÜšÙ\‹ÂˆÛ‘XYÛ›ÜÝXÊXYÛ›ÜÝXÊHÂˆXYÛ›ÜÝXÜËœ\Ú
-XYÛ›ÜÝXÊNÂˆKˆJNÂ‚ˆÛÜšÙ\‹›Û›Y\ÜØYÙJÂˆ]NˆÂˆØÚ[XU™\œÚ[ÛŽˆKˆ\Nˆ™XYÛ›ÜÝXÈ‹ˆXYÛ›ÜÝXÎˆÂˆ]™[ˆš[™›È‹ˆÛÝ\˜ÙNˆÛÜšÙ\‹X›ÛÝÝ˜\‹ˆY\ÜØYÙNˆ”[ÙYHØYY‹ˆKˆKˆJNÂ‚ˆ\ÜÙ\™\]X[
-XYÛ›ÜÝXÜË˜]
-LJK›Y\ÜØYÙK”[ÙYHØYYŠNÂˆ\ÜÙ\™\]X[
-XYÛ›ÜÝXÜË˜]
-LJKœÛÝ\˜ÙKÛÜšÙ\‹X›ÛÝÝ˜\ŠNÂˆÛY[˜ÛÜÙJ
-NÂŸJNÂ‚\Ý
-šÛÈ]Ûˆ™\]Y\ÝÈ[[HÝ]\ˆÛÜšÙ\ˆ™XY[™\ÜÈ[™ÚZÙH‹\Þ[˜È
+test("starts the nested VapourSynth worker before installing the Python worker handler", async () => {
+  let nestedWorkerTerminated = false;
+  let initialized = false;
+  const diagnostics = [];
+  const scope = { postMessage() {} };
+  const stop = await startPyodideWorkerRuntime({
+    scope,
+    async loadPyodide() {
+      return {
+        registerJsModule() {},
+        unregisterJsModule() {},
+        async runPythonAsync() {
+          initialized = true;
+        },
+      };
+    },
+    createVapourSynthWorker() {
+      return {
+        postMessage() {},
+        terminate() {
+          nestedWorkerTerminated = true;
+        },
+      };
+    },
+    async loadPackageSource() {
+      return "import _vapoursynth_rpc";
+    },
+    onDiagnostic(message) {
+      diagnostics.push(message);
+    },
+  });
 
-HOˆÂˆÛÛœÝÜÝYH×NÂˆÛÛœÝÛÜšÙ\ˆHÂˆÜÝY\ÜØYÙJY\ÜØYÙJHÂˆÜÝYœ\Ú
-Y\ÜØYÙJNÂˆKˆ\›Z[˜]J
-HßKˆNÂˆÛÛœÝÛY[H™]È[ÙYUÛÜšÙ\ÛY[
-ÛÜšÙ\ŠNÂˆÛÛœÝÝ]\ÈHÛY[œÝ]\Ê
-NÂ‚ˆ]ØZ]›ÛZ\ÙKœ™\ÛÛ™J
-NÂˆ\ÜÙ\™\]X[
-ÜÝY›[™Ý
-NÂ‚ˆÛÜšÙ\‹›Û›Y\ÜØYÙJÈ]NˆÈØÚ[XU™\œÚ[ÛŽˆK\Nˆœ™XYHˆHJNÂˆ]ØZ]›ÛZ\ÙKœ™\ÛÛ™J
-NÂˆ\ÜÙ\™\]X[
-ÜÝY›[™ÝJNÂˆÛÜšÙ\‹›Û›Y\ÜØYÙJÂˆ]NˆÂˆØÚ[XU™\œÚ[ÛŽˆKˆ™\]Y\ÝYˆÜÝYÌKœ™\]Y\ÝYˆÚÎˆYKˆ^[ØYˆÈ\Ý™X[S[šÙYˆYHKˆKˆJNÂ‚ˆ\ÜÙ\™\]X[
+  assert.equal(initialized, true);
+  assert.equal(typeof scope.onmessage, "function");
+  assert.deepEqual(diagnostics, [
+    "Creating nested VapourSynth worker",
+    "Pyodide loaded",
+    "Python authoring package loaded",
+    "Initializing Python authoring session",
+    "Python authoring session initialized",
+  ]);
+  stop();
+  assert.equal(nestedWorkerTerminated, true);
+});
 
-]ØZ]Ý]\ÊK\Ý™X[S[šÙYYJNÂˆÛY[˜ÛÜÙJ
-NÂŸJNÂ
+test("forwards worker bootstrap diagnostics without treating them as responses", () => {
+  const diagnostics = [];
+  const worker = {
+    postMessage() {},
+    terminate() {},
+  };
+  const client = new PyodideWorkerClient(worker, {
+    onDiagnostic(diagnostic) {
+      diagnostics.push(diagnostic);
+    },
+  });
+
+  worker.onmessage({
+    data: {
+      schemaVersion: 1,
+      type: "diagnostic",
+      diagnostic: {
+        level: "info",
+        source: "worker-bootstrap",
+        message: "Pyodide loaded",
+      },
+    },
+  });
+
+  assert.equal(diagnostics.at(-1).message, "Pyodide loaded");
+  assert.equal(diagnostics.at(-1).source, "worker-bootstrap");
+  client.close();
+});
+
+test("holds Python requests until the outer worker readiness handshake", async () => {
+  const posted = [];
+  const worker = {
+    postMessage(message) {
+      posted.push(message);
+    },
+    terminate() {},
+  };
+  const client = new PyodideWorkerClient(worker);
+  const status = client.status();
+
+  await Promise.resolve();
+  assert.equal(posted.length, 0);
+
+  worker.onmessage({ data: { schemaVersion: 1, type: "ready" } });
+  await Promise.resolve();
+  assert.equal(posted.length, 1);
+  worker.onmessage({
+    data: {
+      schemaVersion: 1,
+      requestId: posted[0].requestId,
+      ok: true,
+      payload: { upstreamLinked: true },
+    },
+  });
+
+  assert.equal((await status).upstreamLinked, true);
+  client.close();
+});

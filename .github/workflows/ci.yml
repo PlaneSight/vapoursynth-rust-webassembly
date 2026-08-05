@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.100.0
+      - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -84,7 +84,7 @@ jobs:
           enable-cache: true
       - name: Sync UV tools
         run: uv sync --locked
-      - uses: dtolnay/rust-toolchain@1.100.0
+      - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: clippy
           targets: wasm32-unknown-emscripten

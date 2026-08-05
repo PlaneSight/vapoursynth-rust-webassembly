@@ -5,12 +5,12 @@
 
 // This deliberately exposes only the implementation units needed for the
 // first proof. Other std functions may be registered by those units, but only
-// BlankClip and Invert are part of the browser-spike contract.
+// BlankClip and Invert are part of the browser runtime contract.
 void browserStaticStdPluginInitialize(VSPlugin *plugin, const VSPLUGINAPI *vspapi) {
     vspapi->configPlugin(
         VSH_STD_PLUGIN_ID,
         "std",
-        "VapourSynth Core Functions (browser spike)",
+        "VapourSynth Core Functions (browser runtime)",
         VAPOURSYNTH_INTERNAL_PLUGIN_VERSION,
         VAPOURSYNTH_API_VERSION,
         pcModifiable,

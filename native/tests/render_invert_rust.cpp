@@ -38,7 +38,7 @@ namespace {
     const uint32_t rgba_size = width * height * 4;
     std::array<uint8_t, 37 * 19 * 4> rgba{};
     if (rgba_size != static_cast<uint32_t>(rgba.size())) {
-        std::fputs("Rust smoke received an unsupported test frame size\n", stderr);
+        std::fputs("Rust render-invert received an unsupported test frame size\n", stderr);
         return false;
     }
 
@@ -56,7 +56,7 @@ int main() {
     constexpr uint32_t rgba_size = width * height * 4;
 
     if (vs_browser_handle_abi_version() != VS_BROWSER_HANDLE_ABI_VERSION) {
-        std::fputs("Rust ownership smoke found an opaque handle ABI mismatch\n", stderr);
+        std::fputs("Rust render-invert found an opaque handle ABI mismatch\n", stderr);
         return 65;
     }
 
@@ -95,6 +95,6 @@ int main() {
         return 69;
     }
 
-    std::puts("Rust safe ownership to VapourSynth RGBA smoke test passed");
+    std::puts("Rust render-invert through VapourSynth RGBA proof passed");
     return 0;
 }

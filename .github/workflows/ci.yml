@@ -117,11 +117,13 @@ jobs:
           printf 'int main(void) { return 0; }\n' > /tmp/emscripten-wrapper-probe.cc
           em++ /tmp/emscripten-wrapper-probe.cc -o /tmp/emscripten-wrapper-probe.exe
           toolchains/emscripten-node /tmp/emscripten-wrapper-probe.exe
-      - name: Build upstream browser smoke
+      - name: Build upstream browser integration
         run: |
           source "$EMSDK/emsdk_env.sh"
           bash toolchains/emscripten-node.test.sh
           if ! bash tools/build-browser.sh; then
-            cat build/browser/meson-logs/meson-log.txt
+            cat build/emscripten/meson-logs/meson-log.txt
             exit 1
           fi
+          test -f build/web/runtime/vapoursynth-browser-module.js
+          test -f build/web/runtime/vapoursynth-browser-module.wasm

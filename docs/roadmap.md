@@ -36,4 +36,4 @@ Port plugins individually from source. Track build status, patches, conformance,
 
 ## Investigation records
 
-Every spike records its upstream commit, compiler/toolchain versions, build flags, patches, browser security headers, tests and observed failures, and whether behaviour is upstream, emulated, or unsupported.
+Every investigation record includes its upstream commit, compiler/toolchain versions, build flags, patches, browser security headers, tests and observed failures, and whether behaviour is upstream, emulated, or unsupported.

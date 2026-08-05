@@ -277,6 +277,6 @@ int main() {
         return 1;
     }
 
-    std::puts("VapourSynth opaque-handle smoke test passed");
+    std::puts("VapourSynth opaque-handle render-invert proof passed");
     return 0;
 }

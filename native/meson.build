@@ -1,5 +1,5 @@
 if host_machine.system() != 'emscripten'
-    error('The upstream browser spike must be configured with toolchains/emscripten.ini')
+    error('The browser render-invert proof must be configured with toolchains/emscripten.ini')
 endif
 
 browser_cpp_args = [
@@ -51,9 +51,9 @@ browser_bridge = static_library(
     override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
 )
 
-smoke = executable(
-    'vapoursynth-browser-smoke',
-    'smoke.cpp',
+render_invert = executable(
+    'vapoursynth-render-invert',
+    'tests/render_invert.cpp',
     cpp_args: browser_cpp_args,
     link_with: [browser_bridge, upstream_core],
     override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
@@ -67,7 +67,7 @@ smoke = executable(
     ],
 )
 
-test('upstream opaque-handle RGBA', smoke)
+test('upstream opaque-handle render-invert', render_invert)
 
 rust_core_builder = find_program(
     join_paths(meson.project_source_root(), 'tools', 'build-emscripten-core.sh'),
@@ -80,9 +80,9 @@ rust_core = custom_target(
     build_by_default: true,
 )
 
-rust_smoke = executable(
-    'vapoursynth-rust-browser-smoke',
-    'rust_smoke.cpp',
+render_invert_rust = executable(
+    'vapoursynth-rust-render-invert',
+    'tests/render_invert_rust.cpp',
     cpp_args: browser_cpp_args,
     link_with: [rust_core, browser_bridge, upstream_core],
     override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
@@ -98,7 +98,7 @@ rust_smoke = executable(
     ],
 )
 
-test('Rust safe ownership to VapourSynth RGBA', rust_smoke)
+test('Rust render-invert through VapourSynth RGBA', render_invert_rust)
 
 browser_module_link_args = [
     '--no-entry',
@@ -133,7 +133,7 @@ node_browser_module = executable(
 
 node = find_program('node')
 test(
-    'worker-owned Emscripten ES module',
+    'worker-owned Emscripten ES module render-invert',
     node,
-    args: [files('browser_module_smoke.mjs'), node_browser_module],
+    args: [files('tests/browser_module.test.mjs'), node_browser_module],
 )

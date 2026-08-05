@@ -35,7 +35,37 @@ jobs:
       - name: Test Rust workspace
         run: cargo test --locked --workspace
 
-  browser-spike:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Test web
+        run: npm test
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.1"
+          enable-cache: true
+      - name: Sync UV tools
+        run: uv sync --locked
+      - name: Test Python
+        run: uv run --locked python -m unittest discover -s web/python -p 'test_*.py'
+
+  browser-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -58,6 +88,7 @@ jobs:
         with:
           components: clippy
           targets: wasm32-unknown-emscripten
+      - uses: Swatinem/rust-cache@v2
       - name: Restore browser toolchain cache
         id: browser-toolchain-cache
         uses: actions/cache@v4
@@ -65,16 +96,6 @@ jobs:
           path: |
             .ci/emsdk
           key: browser-toolchain-${{ runner.os }}-emscripten-${{ env.EMSCRIPTEN_VERSION }}-${{ hashFiles('uv.lock') }}
-      - name: Restore Emscripten Rust cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-emscripten-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            rust-${{ runner.os }}-${{ env.RUST_VERSION }}-emscripten-
       - name: Install Emscripten
         if: steps.browser-toolchain-cache.outputs.cache-hit != 'true'
         run: |
@@ -89,7 +110,7 @@ jobs:
       - name: Lint Emscripten Rust ownership layer
         run: |
           source "$EMSDK/emsdk_env.sh"
-          RUSTFLAGS=-Cpanic=abort uv run --locked cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
+          RUSTFLAGS=-Cpanic=abort cargo clippy --locked -p vapoursynth-core --target wasm32-unknown-emscripten -- -D warnings
       - name: Verify Emscripten executable wrapper
         run: |
           source "$EMSDK/emsdk_env.sh"
@@ -100,7 +121,7 @@ jobs:
         run: |
           source "$EMSDK/emsdk_env.sh"
           bash toolchains/emscripten-node.test.sh
-          if ! uv run --locked bash tools/build-browser.sh; then
+          if ! bash tools/build-browser.sh; then
             cat build/browser/meson-logs/meson-log.txt
             exit 1
           fi

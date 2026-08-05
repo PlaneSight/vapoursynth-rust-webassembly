@@ -75,6 +75,7 @@ rm -rf "$dist_dir"
 mkdir -p "$dist_dir"
 
 cp -R web/app web/protocol web/python web/runtime "$dist_dir/"
+cp web/index.html "$dist_dir/"
 rm -rf "$dist_dir/python/__pycache__"
 
 runtime_dir="$dist_dir/runtime"

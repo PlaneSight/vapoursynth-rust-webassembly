@@ -17,7 +17,7 @@
       * { box-sizing: border-box; }
 
       body {
-        min-width: 20rem;
+        min-width: 0;
         min-height: 100vh;
         margin: 0;
         background:
@@ -81,7 +81,7 @@
         letter-spacing: 0.025em;
       }
 
-      .intro { max-width: 44rem; margin-bottom: 2rem; }
+      .intro { max-width: 40rem; margin-bottom: 2.5rem; }
 
       h1 {
         max-width: 46rem;
@@ -89,7 +89,7 @@
         color: #f7f8f8;
         font-size: clamp(2.35rem, 6vw, 4.6rem);
         font-weight: 510;
-        line-height: 0.98;
+        line-height: 1.02;
         letter-spacing: -0.065em;
       }
 
@@ -104,8 +104,8 @@
 
       .workspace {
         display: grid;
-        grid-template-columns: minmax(0, 1.08fr) minmax(20rem, 0.92fr);
-        overflow: hidden;
+        grid-template-columns: minmax(0, 1.12fr) minmax(22rem, 0.88fr);
+        overflow: clip;
         border: 1px solid rgba(255, 255, 255, 0.09);
         border-radius: 1rem;
         background: rgba(255, 255, 255, 0.018);
@@ -158,7 +158,7 @@
       .canvas-wrap {
         position: relative;
         display: grid;
-        min-height: 21rem;
+        min-height: clamp(17rem, 29vw, 21rem);
         place-items: center;
         padding: clamp(1rem, 3vw, 2rem);
         background:
@@ -171,8 +171,9 @@
       canvas {
         display: block;
         width: 100%;
+        height: auto;
         max-width: 42rem;
-        aspect-ratio: 16 / 9;
+        aspect-ratio: auto;
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 0.5rem;
         background: #111217;
@@ -198,7 +199,8 @@
       textarea {
         display: block;
         width: 100%;
-        min-height: 21rem;
+        min-height: clamp(18rem, 29vw, 21rem);
+        max-height: 36rem;
         resize: vertical;
         border: 0;
         outline: 0;
@@ -252,7 +254,7 @@
 
       @keyframes pulse { 50% { opacity: 0.35; transform: scale(0.82); } }
 
-      @media (max-width: 46rem) {
+      @media (max-width: 54rem) {
         .app-shell { width: min(100% - 1rem, 42rem); padding-top: 0.5rem; }
         .topbar { padding-bottom: 2rem; }
         .workspace { grid-template-columns: 1fr; }
@@ -261,6 +263,7 @@
         textarea { min-height: 18rem; }
         .action-bar { align-items: flex-start; flex-direction: column; }
         .runtime-status { width: 100%; }
+        .runtime-status span:last-child { white-space: normal; }
       }
 
       @media (max-width: 28rem) {

@@ -65,7 +65,7 @@ jobs:
       - name: Build deployable browser runtime
         run: |
           source "$EMSDK/emsdk_env.sh"
-          uv run --locked bash tools/build-browser.sh
+          bash tools/build-browser.sh
           test -f web/runtime/vapoursynth-browser-module.js
           test -f web/runtime/vapoursynth-browser-module.wasm
       - name: Setup Pages

@@ -9,11 +9,6 @@ use wasm_bindgen::prelude::*;
 const SCHEMA_VERSION: u32 = 1;
 
 /// Stateful protocol endpoint owned by exactly one dedicated Web Worker.
-///
-/// The worker creates one session and keeps it alive for the worker lifetime.
-/// Native VapourSynth resources remain owned by the separate Emscripten module;
-/// this object only validates requests and reports the current integration
-/// state until that module is attached.
 #[wasm_bindgen]
 pub struct WorkerSession {
     next_request_id: u32,
@@ -29,9 +24,6 @@ impl WorkerSession {
     }
 
     /// Allocates the next non-zero request identifier.
-    ///
-    /// Request identifiers are correlation values, not resource handles. They
-    /// may wrap after `u32::MAX`; zero is always skipped.
     #[must_use]
     pub fn allocate_request_id(&mut self) -> u32 {
         let request_id = self.next_request_id;
@@ -45,21 +37,30 @@ impl WorkerSession {
         runtime_status()
     }
 
-    /// Validates a render request and returns a structured worker error.
+    /// Validates a render request and reports that the Emscripten runtime is separate.
     ///
     /// # Errors
     ///
-    /// Returns a JavaScript error when dimensions are zero or overflow the
-    /// RGBA8 byte count. Otherwise it reports that the separate Emscripten
-    /// runtime has not yet been attached.
+    /// Returns a structured JavaScript error for an invalid request or because
+    /// the isolated wasm-bindgen host does not own the Emscripten runtime.
     pub fn render_blank_frame(
         &self,
         request_id: u32,
         width: u32,
         height: u32,
     ) -> Result<Vec<u8>, JsValue> {
-        validate_request_id(request_id)?;
-        rgba8_byte_len(width, height)?;
+        if request_id == 0 {
+            return Err(worker_error(
+                request_id,
+                "invalid-request",
+                "requestId must be non-zero",
+            ));
+        }
+
+        rgba8_byte_len(width, height).map_err(|message| {
+            worker_error(request_id, "invalid-dimensions", message)
+        })?;
+
         Err(worker_error(
             request_id,
             "runtime-unavailable",
@@ -83,39 +84,17 @@ pub fn runtime_status() -> String {
     )
 }
 
-fn validate_request_id(request_id: u32) -> Result<(), JsValue> {
-    if request_id == 0 {
-        return Err(worker_error(
-            request_id,
-            "invalid-request",
-            "requestId must be non-zero",
-        ));
-    }
-
-    Ok(())
-}
-
-fn rgba8_byte_len(width: u32, height: u32) -> Result<usize, JsValue> {
+fn rgba8_byte_len(width: u32, height: u32) -> Result<usize, &'static str> {
     if width == 0 || height == 0 {
-        return Err(worker_error(
-            0,
-            "invalid-dimensions",
-            "width and height must be non-zero",
-        ));
+        return Err("width and height must be non-zero");
     }
 
     let bytes = width
         .checked_mul(height)
         .and_then(|pixels| pixels.checked_mul(4))
-        .ok_or_else(|| worker_error(0, "invalid-dimensions", "RGBA8 byte length overflows u32"))?;
+        .ok_or("RGBA8 byte length overflows u32")?;
 
-    usize::try_from(bytes).map_err(|_| {
-        worker_error(
-            0,
-            "invalid-dimensions",
-            "RGBA8 byte length is not representable on this target",
-        )
-    })
+    usize::try_from(bytes).map_err(|_| "RGBA8 byte length is not representable on this target")
 }
 
 fn worker_error(request_id: u32, code: &str, message: &str) -> JsValue {

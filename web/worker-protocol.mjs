@@ -19,14 +19,13 @@ export function createWorkerHandler(session) {
             request.height,
           );
           const rgba = normalizeBytes(bytes);
-          return {
-            message: success(request.requestId, "frame", {
-              width: request.width,
-              height: request.height,
-              rgba: rgba.buffer,
-            }),
-            transfer: [rgba.buffer],
-          };
+          const response = success(request.requestId, "frame", {
+            width: request.width,
+            height: request.height,
+            rgba: rgba.buffer,
+          });
+          response.transfer.push(rgba.buffer);
+          return response;
         }
         default:
           throw protocolError(request.requestId, "unsupported-request", `unsupported request type: ${request.type}`);

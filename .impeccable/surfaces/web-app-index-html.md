@@ -19,7 +19,7 @@ Preserve upstream-backed rendering, explicit unsupported failures, keyboard-firs
 
 ## Direction
 
-Blueprint Graph: a drafting-sheet authoring workspace with deep blueprint blue, paper-white construction lines, cyan graph routes, and orange-red output/error marks. The standard-core catalog is left, the plotted graph is central, the contextual inspector is right, and the Python source record anchors the bottom edge. Composition A at `.impeccable/mocks/blueprint-graph-canvas.png` was approved on 2026-08-07.
+Blueprint Graph: a graphite drafting-sheet authoring workspace with warm paper construction lines, amber graph routes, and orange-red output/error marks. The standard-core catalog is left, the plotted graph is central, the contextual inspector is right, and the Python source record anchors the bottom edge. Composition A at `.impeccable/mocks/blueprint-graph-canvas.png` was approved on 2026-08-07; the user replaced its blue palette with this graphite drafting treatment on 2026-08-07.
 
 ## Memorable moment
 

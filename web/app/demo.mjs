@@ -126,7 +126,7 @@ function selectFunction(name, { fromLibrary = false } = {}) {
   if (fromLibrary) renderLibrary();
 }
 
-function generateSource() { return `import vapoursynth as vs\n\nclip = vs.core.std.BlankClip(width=${dimensions.width}, height=${dimensions.height}, format=vs.RGB24, color=[32.0, 96.0, 224.0])\nclip = vs.core.std.Invert(clip)\nclip.set_output()`; }
+function generateSource() { return `import vapoursynth as vs\n\nclip = vs.core.std.BlankClip(width=${dimensions.width}, height=${dimensions.height}, format=vs.RGB24, color=[184.0, 132.0, 58.0])\nclip = vs.core.std.Invert(clip)\nclip.set_output()`; }
 function clampDimension(control, fallback) { const value = Number.parseInt(control.value, 10); const min = Number.parseInt(control.min, 10); const max = Number.parseInt(control.max, 10); return Number.isInteger(value) ? Math.min(max, Math.max(min, value)) : fallback; }
 function markChanged(message = "CHANGED") { setGraphState("changed", message); }
 
@@ -161,7 +161,14 @@ librarySearch.addEventListener("input", renderLibrary);
 document.querySelectorAll(".library-tab").forEach((tab) => tab.addEventListener("click", () => { libraryKind = tab.textContent.toLowerCase(); document.querySelectorAll(".library-tab").forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === tab))); renderLibrary(); }));
 document.querySelector("[data-copy-call]").addEventListener("click", async () => { const text = functionInfo(selectedLibraryFunction).signature; try { await navigator.clipboard.writeText(text); inspectorNote.textContent = "Function call copied to the clipboard."; } catch { inspectorNote.textContent = `Copy this call: ${text}`; } });
 document.querySelector("[data-insert-note]").addEventListener("click", () => { const info = functionInfo(selectedLibraryFunction); const note = `# Reference: ${info.signature}`; if (!source.value.includes(note)) source.value = `${source.value.trimEnd()}\n\n${note}\n`; source.focus(); markChanged("SOURCE NOTE ADDED"); renderGraph(); inspectorNote.textContent = "A non-executable reference note was added. Replace it with an authored call and its valid arguments to plot it."; });
-document.querySelector(".theme-toggle").addEventListener("click", (event) => { const active = event.currentTarget.getAttribute("aria-pressed") === "true"; event.currentTarget.setAttribute("aria-pressed", String(!active)); event.currentTarget.textContent = active ? "Dark draft" : "Blueprint high contrast"; document.documentElement.style.setProperty("--blue-950", active ? "#031e47" : "#01152f"); });
+document.querySelector(".theme-toggle").addEventListener("click", (event) => {
+  const highContrast = event.currentTarget.getAttribute("aria-pressed") !== "true";
+  event.currentTarget.setAttribute("aria-pressed", String(highContrast));
+  event.currentTarget.textContent = highContrast ? "Drafting contrast" : "Dark draft";
+  if (highContrast) document.documentElement.setAttribute("data-contrast", "high");
+  else document.documentElement.removeAttribute("data-contrast");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", highContrast ? "#0e0d0b" : "#171512");
+});
 
 renderLibrary(); selectFunction("BlankClip");
 window.addEventListener("pagehide", () => client.close(), { once: true });

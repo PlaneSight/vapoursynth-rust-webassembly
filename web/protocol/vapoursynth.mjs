@@ -1,8 +1,8 @@
 const SCHEMA_VERSION = 1;
 
 export function createWorkerHandler(session) {
-  if (!session || typeof session.status !== "function" || typeof session.render_blank_frame !== "function") {
-    throw new TypeError("session must provide status() and render_blank_frame()");
+  if (!session || typeof session.status !== "function" || typeof session.execute_graph !== "function" || typeof session.render_output !== "function") {
+    throw new TypeError("session must provide status(), execute_graph(), and render_output()");
   }
 
   return async function handleWorkerMessage(message) {
@@ -12,44 +12,11 @@ export function createWorkerHandler(session) {
       switch (request.type) {
         case "status":
           return success(request.requestId, "status", parseJson(session.status()));
-        case "renderBlankFrame": {
-          const bytes = await session.render_blank_frame(
-            request.requestId,
-            request.width,
-            request.height,
-          );
-          const rgba = normalizeBytes(bytes);
-          const response = success(request.requestId, "frame", {
-            width: request.width,
-            height: request.height,
-            rgba: rgba.buffer,
-          });
-          response.transfer.push(rgba.buffer);
-          return response;
-        }
-        case "createBlankClip":
-          return success(
-            request.requestId,
-            "node",
-            await callSession(session, "create_blank_clip", request),
-          );
-        case "invert":
-          return success(
-            request.requestId,
-            "node",
-            await callSession(session, "invert", request),
-          );
-        case "setOutput":
-          return success(
-            request.requestId,
-            "output",
-            await callSession(session, "set_output", request),
-          );
-        case "listOutputs":
+        case "executeGraph":
           return success(
             request.requestId,
             "outputs",
-            await callSession(session, "list_outputs", request),
+            await callSession(session, "execute_graph", request),
           );
         case "renderOutput": {
           const frame = await callSession(session, "render_output", request);
@@ -62,9 +29,6 @@ export function createWorkerHandler(session) {
           response.transfer.push(rgba.buffer);
           return response;
         }
-        case "releaseNode":
-          await callSession(session, "release_node", request);
-          return success(request.requestId, "released", {});
         case "resetGraph":
           await callSession(session, "reset_graph", request);
           return success(request.requestId, "reset", {});
@@ -92,35 +56,11 @@ function validateRequest(message) {
   }
 
   switch (message.type) {
-    case "renderBlankFrame":
+    case "executeGraph":
       return {
         requestId,
         type: message.type,
-        width: requireDimension(message.width, requestId, "width"),
-        height: requireDimension(message.height, requestId, "height"),
-      };
-    case "createBlankClip":
-      return {
-        requestId,
-        type: message.type,
-        width: requireDimension(message.width, requestId, "width"),
-        height: requireDimension(message.height, requestId, "height"),
-        format: requireFormat(message.format, requestId),
-        length: requireLength(message.length, requestId),
-      };
-    case "invert":
-    case "releaseNode":
-      return {
-        requestId,
-        type: message.type,
-        nodeId: requireNodeId(message.nodeId, requestId),
-      };
-    case "setOutput":
-      return {
-        requestId,
-        type: message.type,
-        index: requireOutputIndex(message.index, requestId),
-        nodeId: requireNodeId(message.nodeId, requestId),
+        plan: requirePlan(message.plan, requestId),
       };
     case "renderOutput":
       return {
@@ -134,30 +74,9 @@ function validateRequest(message) {
   }
 }
 
-function requireDimension(value, requestId, name) {
-  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
-    throw protocolError(requestId, "invalid-dimensions", `${name} must be a non-zero u32`);
-  }
-  return value;
-}
-
-function requireFormat(value, requestId) {
-  if (typeof value !== "string" || value.length === 0 || value.length > 64) {
-    throw protocolError(requestId, "invalid-format", "format must be a non-empty string no longer than 64 characters");
-  }
-  return value;
-}
-
-function requireLength(value, requestId) {
-  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
-    throw protocolError(requestId, "invalid-length", "length must be a non-zero u32");
-  }
-  return value;
-}
-
-function requireNodeId(value, requestId) {
-  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
-    throw protocolError(requestId, "invalid-node", "nodeId must be a non-zero u32");
+function requirePlan(value, requestId) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw protocolError(requestId, "invalid-plan", "plan must be an object");
   }
   return value;
 }
@@ -165,6 +84,13 @@ function requireNodeId(value, requestId) {
 function requireOutputIndex(value, requestId) {
   if (!Number.isInteger(value) || value < 0 || value > 0xffff_ffff) {
     throw protocolError(requestId, "invalid-output", "output index must be a u32");
+  }
+  return value;
+}
+
+function requireDimension(value, requestId, name) {
+  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
+    throw protocolError(requestId, "runtime-protocol", `${name} must be a non-zero u32`);
   }
   return value;
 }
@@ -180,18 +106,12 @@ async function callSession(session, methodName, request) {
   }
 
   switch (request.type) {
-    case "createBlankClip":
-      return method.call(session, request.requestId, request.width, request.height, request.format, request.length);
-    case "invert":
-    case "releaseNode":
-      return method.call(session, request.requestId, request.nodeId);
-    case "setOutput":
-      return method.call(session, request.requestId, request.index, request.nodeId);
-    case "listOutputs":
-    case "resetGraph":
-      return method.call(session, request.requestId);
+    case "executeGraph":
+      return method.call(session, request.requestId, request.plan);
     case "renderOutput":
       return method.call(session, request.requestId, request.index, request.frame);
+    case "resetGraph":
+      return method.call(session, request.requestId);
     default:
       throw protocolError(request.requestId, "unsupported-request", `unsupported request type: ${request.type}`);
   }

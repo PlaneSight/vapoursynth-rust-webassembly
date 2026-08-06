@@ -35,34 +35,19 @@ export class WorkerClient {
     return this.#request("status");
   }
 
-  renderBlankFrame(width, height) {
-    return this.#request("renderBlankFrame", { width, height });
-  }
-
-  createBlankClip(width, height, format = "RGB24", length = 1) {
-    return this.#request("createBlankClip", { width, height, format, length });
-  }
-
-  invert(nodeId) {
-    return this.#request("invert", { nodeId });
-  }
-
-  setOutput(index, nodeId) {
-    return this.#request("setOutput", { index, nodeId });
-  }
-
-  listOutputs() {
-    return this.#request("listOutputs");
+  /** Executes one graph plan; resolves with output metadata. */
+  executeGraph(plan) {
+    if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
+      return Promise.reject(Object.assign(new Error("plan must be an object"), { code: "invalid-plan" }));
+    }
+    return this.#request("executeGraph", { plan });
   }
 
   renderOutput(index, frame = 0) {
     return this.#request("renderOutput", { index, frame });
   }
 
-  releaseNode(nodeId) {
-    return this.#request("releaseNode", { nodeId });
-  }
-
+  /** Releases every retained node and the active core. */
   resetGraph() {
     return this.#request("resetGraph");
   }

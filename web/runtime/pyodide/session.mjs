@@ -1,8 +1,17 @@
 import { createPackageInstaller } from "./package.mjs";
-import { createPyodideRpc, PYODIDE_RPC_MODULE } from "../../protocol/pyodide.mjs";
+import {
+  MAX_SCRIPT_DURATION_MS,
+  PYODIDE_RPC_MODULE,
+  validateDrainedPlan,
+} from "../../protocol/pyodide.mjs";
 
-const MAX_SOURCE_LENGTH = 1_000_000;
-const MAX_FILENAME_LENGTH = 256;
+export const MAX_SOURCE_LENGTH = 1_000_000;
+export const MAX_FILENAME_LENGTH = 256;
+export { MAX_SCRIPT_DURATION_MS };
+
+/** The Python module records the script's graph plan; these snippets drain it. */
+const RESET_PLAN_SNIPPET = "import vapoursynth as _vs\n_vs._reset_plan()";
+const DRAIN_PLAN_SNIPPET = "import vapoursynth as _vs\n_vs._drain_plan()";
 
 /** Owns one Pyodide interpreter and its dedicated VapourSynth worker client. */
 export class PyodideSession {
@@ -12,21 +21,26 @@ export class PyodideSession {
   #initialized = false;
   #closed = false;
   #operationTail = Promise.resolve();
+  #scriptTimeoutMs;
 
-  constructor({ pyodide, workerClient, packageSource }) {
+  constructor({ pyodide, workerClient, packageSource, scriptTimeoutMs = MAX_SCRIPT_DURATION_MS }) {
     if (!pyodide || typeof pyodide.registerJsModule !== "function" || typeof pyodide.runPythonAsync !== "function") {
       throw new TypeError("pyodide must provide registerJsModule() and runPythonAsync()");
     }
-    if (!workerClient || typeof workerClient.status !== "function" || typeof workerClient.resetGraph !== "function" || typeof workerClient.listOutputs !== "function" || typeof workerClient.renderOutput !== "function") {
+    if (!workerClient || typeof workerClient.status !== "function" || typeof workerClient.resetGraph !== "function" || typeof workerClient.executeGraph !== "function" || typeof workerClient.renderOutput !== "function") {
       throw new TypeError("workerClient must provide the authoring worker API");
     }
     if (typeof packageSource !== "string" || packageSource.trim().length === 0) {
       throw new TypeError("packageSource must be a non-empty string");
     }
+    if (!Number.isFinite(scriptTimeoutMs) || scriptTimeoutMs <= 0) {
+      throw new TypeError("scriptTimeoutMs must be a positive number");
+    }
 
     this.#pyodide = pyodide;
     this.#workerClient = workerClient;
     this.#packageSource = packageSource;
+    this.#scriptTimeoutMs = scriptTimeoutMs;
   }
 
   async initialize() {
@@ -35,7 +49,10 @@ export class PyodideSession {
       return;
     }
 
-    this.#pyodide.registerJsModule(PYODIDE_RPC_MODULE, createPyodideRpc(this.#workerClient));
+    // The package installer imports this name unconditionally, so it must
+    // stay importable even though the forwarding RPC bridge was removed when
+    // graph plans moved to Python-side recording.
+    this.#pyodide.registerJsModule(PYODIDE_RPC_MODULE, Object.freeze({}));
     try {
       await this.#pyodide.runPythonAsync(createPackageInstaller(this.#packageSource));
       this.#initialized = true;
@@ -63,43 +80,67 @@ export class PyodideSession {
   }
 
   runScript(source, filename = "script.vpy") {
-    return this.#enqueue(() => this.#runScript(source, filename));
+    return this.#enqueue(() => this.#startScript(source, filename));
   }
 
   renderOutput(index, frame = 0) {
-    return this.#enqueue(async () => {
-      this.#assertReady();
-      return this.#workerClient.renderOutput(index, frame);
+    return this.#enqueue(() => {
+      const result = Promise.resolve().then(() => {
+        this.#assertReady();
+        return this.#workerClient.renderOutput(index, frame);
+      });
+      return { result, settled: result };
     });
   }
 
-  async #runScript(source, filename) {
+  #startScript(source, filename) {
     this.#assertReady();
     validateSource(source, filename);
-    await this.#workerClient.resetGraph();
 
+    const controller = new AbortController();
     const scriptGlobals = createScriptGlobals(this.#pyodide, filename);
-    try {
-      await this.#pyodide.runPythonAsync(source, { globals: scriptGlobals.value });
-      const result = await this.#workerClient.listOutputs();
-      if (!result || !Array.isArray(result.outputs)) {
-        throw sessionError("runtime-protocol", "the VapourSynth worker returned invalid output metadata");
+    const execution = (async () => {
+      try {
+        await this.#workerClient.resetGraph();
+        throwIfAborted(controller.signal);
+        await this.#pyodide.runPythonAsync(RESET_PLAN_SNIPPET);
+        throwIfAborted(controller.signal);
+        await this.#pyodide.runPythonAsync(source, { globals: scriptGlobals.value });
+        throwIfAborted(controller.signal);
+        const drained = await this.#pyodide.runPythonAsync(DRAIN_PLAN_SNIPPET);
+        throwIfAborted(controller.signal);
+        const plan = parseDrainedPlan(drained);
+        validateDrainedPlan(plan);
+        const result = await this.#workerClient.executeGraph(plan);
+        throwIfAborted(controller.signal);
+        if (!result || !Array.isArray(result.outputs)) {
+          throw sessionError("runtime-protocol", "the VapourSynth worker returned invalid output metadata");
+        }
+        return { outputs: result.outputs };
+      } catch (error) {
+        await this.#workerClient.resetGraph().catch(() => {});
+        if (error?.code && error.code !== "python-error") {
+          throw error;
+        }
+        throw sessionError("python-error", `Python script failed: ${errorMessage(error)}`);
+      } finally {
+        scriptGlobals.dispose();
       }
-      return { outputs: result.outputs };
-    } catch (error) {
-      await this.#workerClient.resetGraph().catch(() => {});
-      if (error?.code && error.code !== "python-error") {
-        throw error;
-      }
-      throw sessionError("python-error", `Python script failed: ${errorMessage(error)}`);
-    } finally {
-      scriptGlobals.dispose();
-    }
+    })();
+
+    return {
+      result: withScriptTimeLimit(execution, this.#scriptTimeoutMs, controller),
+      // The caller receives the timeout immediately, but the interpreter queue
+      // stays blocked until the underlying Pyodide call actually settles.
+      // Abort checks then prevent any late plan drain or worker invocation.
+      settled: execution,
+    };
   }
 
   #enqueue(operation) {
-    const result = this.#operationTail.then(operation, operation);
-    this.#operationTail = result.catch(() => {});
+    const started = this.#operationTail.then(operation, operation);
+    const result = started.then((entry) => entry.result);
+    this.#operationTail = started.then((entry) => entry.settled).catch(() => {});
     return result;
   }
 
@@ -173,6 +214,43 @@ function validateSource(source, filename) {
   if (typeof filename !== "string" || filename.length === 0 || filename.length > MAX_FILENAME_LENGTH) {
     throw sessionError("invalid-script", `filename must be a non-empty string no longer than ${MAX_FILENAME_LENGTH} characters`);
   }
+}
+
+function throwIfAborted(signal) {
+  if (signal.aborted) {
+    throw signal.reason ?? sessionError("script-timeout", "script execution was aborted");
+  }
+}
+
+function parseDrainedPlan(value) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw sessionError("runtime-protocol", "the Python runtime returned an unreadable graph plan");
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw sessionError("runtime-protocol", "the Python runtime returned an unreadable graph plan");
+  }
+}
+
+function withScriptTimeLimit(execution, durationMs, controller) {
+  const timeout = sessionError("script-timeout", `script exceeded the ${durationMs} ms wall-clock limit`);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      controller.abort(timeout);
+      reject(timeout);
+    }, durationMs);
+    execution.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function sessionError(code, message) {

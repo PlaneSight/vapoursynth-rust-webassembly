@@ -7,10 +7,12 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -186,16 +188,6 @@ struct FrameInfo final {
     return result <= maximum_rgba_bytes;
 }
 
-[[nodiscard]] bool valid_dimensions(uint32_t width, uint32_t height) noexcept {
-    size_t rgba_bytes = 0;
-    return width <= static_cast<uint32_t>(INT_MAX) && height <= static_cast<uint32_t>(INT_MAX) &&
-           rgba_byte_count(width, height, rgba_bytes);
-}
-
-[[nodiscard]] bool map_set_int(const VSAPI *api, VSMap *map, const char *key, int64_t value) noexcept {
-    return api->mapSetInt(map, key, value, maReplace) == 0;
-}
-
 [[nodiscard]] bool has_map_error(const VSAPI *api, const VSMap *map) noexcept {
     return api->mapGetError(map) != nullptr;
 }
@@ -296,73 +288,361 @@ struct FrameInfo final {
     return VS_BROWSER_STATUS_OK;
 }
 
-[[nodiscard]] vs_browser_status create_blank_clip_node(
-    const std::shared_ptr<CoreState> &core,
-    uint32_t width,
-    uint32_t height,
-    Node &result) noexcept {
-    if (!valid_dimensions(width, height)) {
+[[nodiscard]] bool valid_span(const uint8_t *bytes, uint32_t length) noexcept {
+    return bytes != nullptr && length != 0;
+}
+
+[[nodiscard]] bool span_has_nul(const uint8_t *bytes, uint32_t length) noexcept {
+    return std::memchr(bytes, 0, static_cast<size_t>(length)) != nullptr;
+}
+
+[[nodiscard]] std::string span_string(const uint8_t *bytes, uint32_t length) {
+    return std::string(reinterpret_cast<const char *>(bytes), static_cast<size_t>(length));
+}
+
+void clear_error_text(char *error, uint32_t error_size) noexcept {
+    if (error != nullptr && error_size != 0) {
+        error[0] = '\0';
+    }
+}
+
+void write_error_text(const VSAPI *api, const VSMap *map, char *error, uint32_t error_size) noexcept {
+    if (error == nullptr || error_size == 0 || map == nullptr) {
+        clear_error_text(error, error_size);
+        return;
+    }
+
+    const char *text = api->mapGetError(map);
+    if (text == nullptr) {
+        error[0] = '\0';
+        return;
+    }
+
+    size_t length = std::strlen(text);
+    const size_t budget = static_cast<size_t>(error_size) - 1;
+    if (length > budget) {
+        length = budget;
+    }
+    std::memcpy(error, text, length);
+    error[length] = '\0';
+}
+
+[[nodiscard]] vs_browser_status validate_descriptors(
+    const vs_browser_argument *arguments,
+    uint32_t argument_count) noexcept {
+    if (argument_count == 0) {
+        return VS_BROWSER_STATUS_OK;
+    }
+    if (arguments == nullptr) {
         return VS_BROWSER_STATUS_INVALID_ARGUMENT;
     }
 
-    const VSAPI *api = core->api();
-    VSPlugin *standard = api->getPluginByID(VSH_STD_PLUGIN_ID, core->get());
-    if (standard == nullptr) {
-        return VS_BROWSER_STATUS_STANDARD_PLUGIN_UNAVAILABLE;
+    for (uint32_t index = 0; index < argument_count; ++index) {
+        const vs_browser_argument &argument = arguments[index];
+        if (argument.key == nullptr || argument.key_length == 0 ||
+            span_has_nul(argument.key, argument.key_length)) {
+            return VS_BROWSER_STATUS_INVALID_ARGUMENT;
+        }
+        if (argument.kind < VS_BROWSER_ARGUMENT_INT || argument.kind > VS_BROWSER_ARGUMENT_NODE) {
+            return VS_BROWSER_STATUS_INVALID_ARGUMENT;
+        }
+        if (argument.value_count == 0 || argument.values == nullptr) {
+            return VS_BROWSER_STATUS_INVALID_ARGUMENT;
+        }
+        for (uint32_t previous = 0; previous < index; ++previous) {
+            const vs_browser_argument &earlier = arguments[previous];
+            if (earlier.key_length == argument.key_length &&
+                std::memcmp(earlier.key, argument.key, argument.key_length) == 0) {
+                return VS_BROWSER_STATUS_INVALID_ARGUMENT;
+            }
+        }
     }
 
-    Map arguments(api);
-    if (arguments.get() == nullptr || !map_set_int(api, arguments.get(), "width", width) ||
-        !map_set_int(api, arguments.get(), "height", height) ||
-        !map_set_int(api, arguments.get(), "format", pfRGB24) || !map_set_int(api, arguments.get(), "length", 1)) {
-        return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
-    }
-
-    Map invocation(api, api->invoke(standard, "BlankClip", arguments.get()));
-    if (invocation.get() == nullptr || has_map_error(api, invocation.get())) {
-        return VS_BROWSER_STATUS_INVOCATION_FAILED;
-    }
-
-    int node_error = 0;
-    Node node(api, api->mapGetNode(invocation.get(), "clip", 0, &node_error));
-    if (node_error != 0 || node.get() == nullptr) {
-        return VS_BROWSER_STATUS_NODE_UNAVAILABLE;
-    }
-
-    result = std::move(node);
     return VS_BROWSER_STATUS_OK;
 }
 
-[[nodiscard]] vs_browser_status create_inverted_node(
+struct Token final {
+    uint32_t slot = 0;
+    uint32_t generation = 0;
+    [[nodiscard]] bool valid() const noexcept { return slot != 0 && generation != 0; }
+};
+struct CoreLease final {
+    std::shared_ptr<CoreState> core;
+};
+struct NodeLease final {
+    std::shared_ptr<CoreState> core;
+    Node node;
+};
+struct FrameLease final {
+    std::shared_ptr<CoreState> core;
+    Frame frame;
+};
+using Resource = std::variant<CoreLease, NodeLease, FrameLease>;
+enum class ResourceKind : uint8_t {
+    Core,
+    Node,
+    Frame,
+};
+struct Slot final {
+    uint32_t generation = 0;
+    uint32_t next_free = 0;
+    bool retired = false;
+    std::optional<Resource> resource;
+};
+class HandleTable final {
+public:
+    [[nodiscard]] bool has_active_core() const noexcept { return !active_core_.expired(); }
+    void set_active_core(const std::shared_ptr<CoreState> &core) noexcept { active_core_ = core; }
+    [[nodiscard]] vs_browser_status insert(Resource resource, Token &result) {
+        result = Token{};
+        if (free_head_ != 0) {
+            const uint32_t slot_index = free_head_;
+            Slot &slot = slots_[static_cast<size_t>(slot_index) - 1];
+            free_head_ = slot.next_free;
+            slot.next_free = 0;
+            if (slot.retired || slot.resource.has_value() || slot.generation == std::numeric_limits<uint32_t>::max()) {
+                return VS_BROWSER_STATUS_INTERNAL_FAILURE;
+            }
+            ++slot.generation;
+            slot.resource.emplace(std::move(resource));
+            result = Token{slot_index, slot.generation};
+            return VS_BROWSER_STATUS_OK;
+        }
+        if (slots_.size() >= static_cast<size_t>(std::numeric_limits<uint32_t>::max())) {
+            return VS_BROWSER_STATUS_HANDLE_TABLE_EXHAUSTED;
+        }
+        Slot slot;
+        slot.generation = 1;
+        slot.resource.emplace(std::move(resource));
+        slots_.push_back(std::move(slot));
+        result = Token{static_cast<uint32_t>(slots_.size()), 1};
+        return VS_BROWSER_STATUS_OK;
+    }
+    template <typename Lease>
+    [[nodiscard]] Lease *get(Token token, vs_browser_status &status) noexcept {
+        Slot *slot = find_slot(token, status);
+        if (slot == nullptr) {
+            return nullptr;
+        }
+        Lease *lease = std::get_if<Lease>(&slot->resource.value());
+        if (lease == nullptr) {
+            status = VS_BROWSER_STATUS_HANDLE_KIND_MISMATCH;
+        }
+        return lease;
+    }
+    [[nodiscard]] vs_browser_status release(Token token, ResourceKind expected_kind) noexcept {
+        vs_browser_status status = VS_BROWSER_STATUS_OK;
+        Slot *slot = find_slot(token, status);
+        if (slot == nullptr) {
+            return status;
+        }
+        if (!has_kind(slot->resource.value(), expected_kind)) {
+            return VS_BROWSER_STATUS_HANDLE_KIND_MISMATCH;
+        }
+        slot->resource.reset();
+        if (slot->generation == std::numeric_limits<uint32_t>::max()) {
+            slot->retired = true;
+            return VS_BROWSER_STATUS_OK;
+        }
+        slot->next_free = free_head_;
+        free_head_ = token.slot;
+        return VS_BROWSER_STATUS_OK;
+    }
+private:
+    [[nodiscard]] Slot *find_slot(Token token, vs_browser_status &status) noexcept {
+        if (!token.valid()) {
+            status = VS_BROWSER_STATUS_INVALID_HANDLE;
+            return nullptr;
+        }
+        const size_t slot_index = static_cast<size_t>(token.slot) - 1;
+        if (slot_index >= slots_.size()) {
+            status = VS_BROWSER_STATUS_INVALID_HANDLE;
+            return nullptr;
+        }
+        Slot &slot = slots_[slot_index];
+        if (!slot.resource.has_value() || slot.generation != token.generation) {
+            status = VS_BROWSER_STATUS_INVALID_HANDLE;
+            return nullptr;
+        }
+        status = VS_BROWSER_STATUS_OK;
+        return &slot;
+    }
+    [[nodiscard]] static bool has_kind(const Resource &resource, ResourceKind expected_kind) noexcept {
+        switch (expected_kind) {
+        case ResourceKind::Core:
+            return std::holds_alternative<CoreLease>(resource);
+        case ResourceKind::Node:
+            return std::holds_alternative<NodeLease>(resource);
+        case ResourceKind::Frame:
+            return std::holds_alternative<FrameLease>(resource);
+        }
+        return false;
+    }
+    std::vector<Slot> slots_;
+    uint32_t free_head_ = 0;
+    std::weak_ptr<CoreState> active_core_;
+};
+HandleTable handles;
+
+[[nodiscard]] vs_browser_status populate_map(
+    const VSAPI *api,
+    VSMap *map,
+    const vs_browser_argument *arguments,
+    uint32_t argument_count) noexcept {
+    for (uint32_t index = 0; index < argument_count; ++index) {
+        const vs_browser_argument &argument = arguments[index];
+        const std::string key = span_string(argument.key, argument.key_length);
+        const char *key_c = key.c_str();
+
+        switch (argument.kind) {
+        case VS_BROWSER_ARGUMENT_INT:
+            if (argument.value_count == 1) {
+                int64_t value = 0;
+                std::memcpy(&value, argument.values, sizeof(value));
+                if (api->mapSetInt(map, key_c, value, maReplace) != 0) {
+                    return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
+                }
+            } else if (api->mapSetIntArray(
+                           map,
+                           key_c,
+                           static_cast<const int64_t *>(argument.values),
+                           static_cast<int>(argument.value_count)) != 0) {
+                return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
+            }
+            break;
+
+        case VS_BROWSER_ARGUMENT_FLOAT:
+            if (argument.value_count == 1) {
+                double value = 0;
+                std::memcpy(&value, argument.values, sizeof(value));
+                if (api->mapSetFloat(map, key_c, value, maReplace) != 0) {
+                    return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
+                }
+            } else if (api->mapSetFloatArray(
+                           map,
+                           key_c,
+                           static_cast<const double *>(argument.values),
+                           static_cast<int>(argument.value_count)) != 0) {
+                return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
+            }
+            break;
+
+        case VS_BROWSER_ARGUMENT_DATA:
+            if (api->mapSetData(
+                    map,
+                    key_c,
+                    static_cast<const char *>(argument.values),
+                    static_cast<int>(argument.value_count),
+                    dtBinary,
+                    maReplace) != 0) {
+                return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
+            }
+            break;
+
+        case VS_BROWSER_ARGUMENT_NODE: {
+            const auto *pairs = static_cast<const uint8_t *>(argument.values);
+            for (uint32_t element = 0; element < argument.value_count; ++element) {
+                uint32_t slot = 0;
+                uint32_t generation = 0;
+                std::memcpy(&slot, pairs + static_cast<size_t>(element) * 8, sizeof(slot));
+                std::memcpy(&generation, pairs + static_cast<size_t>(element) * 8 + 4, sizeof(generation));
+
+                vs_browser_status status = VS_BROWSER_STATUS_OK;
+                NodeLease *lease = handles.get<NodeLease>(Token{slot, generation}, status);
+                if (lease == nullptr) {
+                    return status;
+                }
+
+                // The map takes ownership of this fresh reference; the upstream
+                // map consumes it even when mapConsumeNode reports failure.
+                VSNode *reference = api->addNodeRef(lease->node.get());
+                if (reference == nullptr) {
+                    return VS_BROWSER_STATUS_NODE_UNAVAILABLE;
+                }
+                if (api->mapConsumeNode(map, key_c, reference, element == 0 ? maReplace : maAppend) != 0) {
+                    return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
+                }
+            }
+            break;
+        }
+
+        default:
+            return VS_BROWSER_STATUS_INVALID_ARGUMENT;
+        }
+    }
+
+    return VS_BROWSER_STATUS_OK;
+}
+
+[[nodiscard]] vs_browser_status invoke_core(
     const std::shared_ptr<CoreState> &core,
-    VSNode *source,
+    const uint8_t *namespace_bytes,
+    uint32_t namespace_length,
+    const uint8_t *function_bytes,
+    uint32_t function_length,
+    const vs_browser_argument *arguments,
+    uint32_t argument_count,
+    const uint8_t *result_key_bytes,
+    uint32_t result_key_length,
+    uint32_t result_index,
+    char *error,
+    uint32_t error_size,
     Node &result) noexcept {
+    result = Node{};
+    clear_error_text(error, error_size);
+
+    if (!valid_span(namespace_bytes, namespace_length) ||
+        span_has_nul(namespace_bytes, namespace_length) ||
+        !valid_span(function_bytes, function_length) ||
+        span_has_nul(function_bytes, function_length) ||
+        !valid_span(result_key_bytes, result_key_length) ||
+        span_has_nul(result_key_bytes, result_key_length) ||
+        (error_size != 0 && error == nullptr)) {
+        return VS_BROWSER_STATUS_INVALID_ARGUMENT;
+    }
+
+    const vs_browser_status descriptor_status = validate_descriptors(arguments, argument_count);
+    if (descriptor_status != VS_BROWSER_STATUS_OK) {
+        return descriptor_status;
+    }
+
     const VSAPI *api = core->api();
-    VSPlugin *standard = api->getPluginByID(VSH_STD_PLUGIN_ID, core->get());
-    if (standard == nullptr) {
-        return VS_BROWSER_STATUS_STANDARD_PLUGIN_UNAVAILABLE;
+    const std::string namespace_name = span_string(namespace_bytes, namespace_length);
+    const std::string function_name = span_string(function_bytes, function_length);
+    const std::string result_key = span_string(result_key_bytes, result_key_length);
+
+    VSPlugin *plugin = api->getPluginByNamespace(namespace_name.c_str(), core->get());
+    if (plugin == nullptr) {
+        return VS_BROWSER_STATUS_UNKNOWN_FUNCTION;
+    }
+    if (api->getPluginFunctionByName(function_name.c_str(), plugin) == nullptr) {
+        return VS_BROWSER_STATUS_UNKNOWN_FUNCTION;
     }
 
-    Node source_reference(api, api->addNodeRef(source));
-    if (source_reference.get() == nullptr) {
-        return VS_BROWSER_STATUS_NODE_UNAVAILABLE;
-    }
-
-    Map arguments(api);
-    if (arguments.get() == nullptr) {
+    Map arguments_map(api);
+    if (arguments_map.get() == nullptr) {
         return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
     }
-    if (api->mapConsumeNode(arguments.get(), "clip", source_reference.release(), maReplace) != 0) {
-        return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
+    const vs_browser_status populate_status =
+        populate_map(api, arguments_map.get(), arguments, argument_count);
+    if (populate_status != VS_BROWSER_STATUS_OK) {
+        return populate_status;
     }
 
-    Map invocation(api, api->invoke(standard, "Invert", arguments.get()));
+    Map invocation(api, api->invoke(plugin, function_name.c_str(), arguments_map.get()));
     if (invocation.get() == nullptr || has_map_error(api, invocation.get())) {
+        write_error_text(api, invocation.get(), error, error_size);
         return VS_BROWSER_STATUS_INVOCATION_FAILED;
     }
 
+    if (result_index > static_cast<uint32_t>(INT_MAX)) {
+        return VS_BROWSER_STATUS_NODE_UNAVAILABLE;
+    }
+
     int node_error = 0;
-    Node node(api, api->mapGetNode(invocation.get(), "clip", 0, &node_error));
+    Node node(
+        api,
+        api->mapGetNode(invocation.get(), result_key.c_str(), static_cast<int>(result_index), &node_error));
     if (node_error != 0 || node.get() == nullptr) {
         return VS_BROWSER_STATUS_NODE_UNAVAILABLE;
     }
@@ -392,155 +672,6 @@ struct FrameInfo final {
     return VS_BROWSER_STATUS_OK;
 }
 
-struct Token final {
-    uint32_t slot = 0;
-    uint32_t generation = 0;
-
-    [[nodiscard]] bool valid() const noexcept { return slot != 0 && generation != 0; }
-};
-
-struct CoreLease final {
-    std::shared_ptr<CoreState> core;
-};
-
-struct NodeLease final {
-    std::shared_ptr<CoreState> core;
-    Node node;
-};
-
-struct FrameLease final {
-    std::shared_ptr<CoreState> core;
-    Frame frame;
-};
-
-using Resource = std::variant<CoreLease, NodeLease, FrameLease>;
-
-enum class ResourceKind : uint8_t {
-    Core,
-    Node,
-    Frame,
-};
-
-struct Slot final {
-    uint32_t generation = 0;
-    uint32_t next_free = 0;
-    bool retired = false;
-    std::optional<Resource> resource;
-};
-
-class HandleTable final {
-public:
-    [[nodiscard]] bool has_active_core() const noexcept { return !active_core_.expired(); }
-
-    void set_active_core(const std::shared_ptr<CoreState> &core) noexcept { active_core_ = core; }
-
-    [[nodiscard]] vs_browser_status insert(Resource resource, Token &result) {
-        result = Token{};
-
-        if (free_head_ != 0) {
-            const uint32_t slot_index = free_head_;
-            Slot &slot = slots_[static_cast<size_t>(slot_index) - 1];
-            free_head_ = slot.next_free;
-            slot.next_free = 0;
-            if (slot.retired || slot.resource.has_value() || slot.generation == std::numeric_limits<uint32_t>::max()) {
-                return VS_BROWSER_STATUS_INTERNAL_FAILURE;
-            }
-
-            ++slot.generation;
-            slot.resource.emplace(std::move(resource));
-            result = Token{slot_index, slot.generation};
-            return VS_BROWSER_STATUS_OK;
-        }
-
-        if (slots_.size() >= static_cast<size_t>(std::numeric_limits<uint32_t>::max())) {
-            return VS_BROWSER_STATUS_HANDLE_TABLE_EXHAUSTED;
-        }
-
-        Slot slot;
-        slot.generation = 1;
-        slot.resource.emplace(std::move(resource));
-        slots_.push_back(std::move(slot));
-        result = Token{static_cast<uint32_t>(slots_.size()), 1};
-        return VS_BROWSER_STATUS_OK;
-    }
-
-    template <typename Lease>
-    [[nodiscard]] Lease *get(Token token, vs_browser_status &status) noexcept {
-        Slot *slot = find_slot(token, status);
-        if (slot == nullptr) {
-            return nullptr;
-        }
-
-        Lease *lease = std::get_if<Lease>(&slot->resource.value());
-        if (lease == nullptr) {
-            status = VS_BROWSER_STATUS_HANDLE_KIND_MISMATCH;
-        }
-        return lease;
-    }
-
-    [[nodiscard]] vs_browser_status release(Token token, ResourceKind expected_kind) noexcept {
-        vs_browser_status status = VS_BROWSER_STATUS_OK;
-        Slot *slot = find_slot(token, status);
-        if (slot == nullptr) {
-            return status;
-        }
-        if (!has_kind(slot->resource.value(), expected_kind)) {
-            return VS_BROWSER_STATUS_HANDLE_KIND_MISMATCH;
-        }
-
-        slot->resource.reset();
-        if (slot->generation == std::numeric_limits<uint32_t>::max()) {
-            slot->retired = true;
-            return VS_BROWSER_STATUS_OK;
-        }
-
-        slot->next_free = free_head_;
-        free_head_ = token.slot;
-        return VS_BROWSER_STATUS_OK;
-    }
-
-private:
-    [[nodiscard]] Slot *find_slot(Token token, vs_browser_status &status) noexcept {
-        if (!token.valid()) {
-            status = VS_BROWSER_STATUS_INVALID_HANDLE;
-            return nullptr;
-        }
-
-        const size_t slot_index = static_cast<size_t>(token.slot) - 1;
-        if (slot_index >= slots_.size()) {
-            status = VS_BROWSER_STATUS_INVALID_HANDLE;
-            return nullptr;
-        }
-
-        Slot &slot = slots_[slot_index];
-        if (!slot.resource.has_value() || slot.generation != token.generation) {
-            status = VS_BROWSER_STATUS_INVALID_HANDLE;
-            return nullptr;
-        }
-
-        status = VS_BROWSER_STATUS_OK;
-        return &slot;
-    }
-
-    [[nodiscard]] static bool has_kind(const Resource &resource, ResourceKind expected_kind) noexcept {
-        switch (expected_kind) {
-        case ResourceKind::Core:
-            return std::holds_alternative<CoreLease>(resource);
-        case ResourceKind::Node:
-            return std::holds_alternative<NodeLease>(resource);
-        case ResourceKind::Frame:
-            return std::holds_alternative<FrameLease>(resource);
-        }
-
-        return false;
-    }
-
-    std::vector<Slot> slots_;
-    uint32_t free_head_ = 0;
-    std::weak_ptr<CoreState> active_core_;
-};
-
-HandleTable handles;
 
 [[nodiscard]] vs_browser_status create_core(Token &result) {
     result = Token{};
@@ -559,45 +690,6 @@ HandleTable handles;
         handles.set_active_core(core);
     }
     return insert_status;
-}
-
-[[nodiscard]] vs_browser_status create_blank_clip(Token core_token, uint32_t width, uint32_t height, Token &result) {
-    result = Token{};
-
-    vs_browser_status status = VS_BROWSER_STATUS_OK;
-    CoreLease *lease = handles.get<CoreLease>(core_token, status);
-    if (lease == nullptr) {
-        return status;
-    }
-
-    const std::shared_ptr<CoreState> core = lease->core;
-    Node node;
-    status = create_blank_clip_node(core, width, height, node);
-    if (status != VS_BROWSER_STATUS_OK) {
-        return status;
-    }
-
-    return handles.insert(Resource{NodeLease{core, std::move(node)}}, result);
-}
-
-[[nodiscard]] vs_browser_status invert_node(Token source_token, Token &result) {
-    result = Token{};
-
-    vs_browser_status status = VS_BROWSER_STATUS_OK;
-    NodeLease *source = handles.get<NodeLease>(source_token, status);
-    if (source == nullptr) {
-        return status;
-    }
-
-    const std::shared_ptr<CoreState> core = source->core;
-    VSNode *source_node = source->node.get();
-    Node inverted;
-    status = create_inverted_node(core, source_node, inverted);
-    if (status != VS_BROWSER_STATUS_OK) {
-        return status;
-    }
-
-    return handles.insert(Resource{NodeLease{core, std::move(inverted)}}, result);
 }
 
 [[nodiscard]] vs_browser_status get_node_frame(Token node_token, uint32_t frame_number, Token &result) {
@@ -638,71 +730,6 @@ HandleTable handles;
     }
 
     return copy_rgb24_to_rgba(frame->core->api(), frame->frame.get(), output);
-}
-
-class TokenScope final {
-public:
-    explicit TokenScope(ResourceKind kind) noexcept : kind_(kind) {}
-
-    ~TokenScope() {
-        if (token_.valid()) {
-            static_cast<void>(handles.release(token_, kind_));
-        }
-    }
-
-    TokenScope(const TokenScope &) = delete;
-    TokenScope &operator=(const TokenScope &) = delete;
-    TokenScope(TokenScope &&) = delete;
-    TokenScope &operator=(TokenScope &&) = delete;
-
-    void reset(Token token) noexcept { token_ = token; }
-
-    [[nodiscard]] Token get() const noexcept { return token_; }
-
-private:
-    ResourceKind kind_;
-    Token token_;
-};
-
-[[nodiscard]] vs_browser_status render_inverted_blank(
-    uint32_t width,
-    uint32_t height,
-    std::span<uint8_t> output) {
-    if (!valid_dimensions(width, height)) {
-        return VS_BROWSER_STATUS_INVALID_ARGUMENT;
-    }
-
-    TokenScope core(ResourceKind::Core);
-    TokenScope blank(ResourceKind::Node);
-    TokenScope inverted(ResourceKind::Node);
-    TokenScope frame(ResourceKind::Frame);
-
-    Token token;
-    vs_browser_status status = create_core(token);
-    if (status != VS_BROWSER_STATUS_OK) {
-        return status;
-    }
-    core.reset(token);
-
-    status = create_blank_clip(core.get(), width, height, token);
-    if (status != VS_BROWSER_STATUS_OK) {
-        return status;
-    }
-    blank.reset(token);
-
-    status = invert_node(blank.get(), token);
-    if (status != VS_BROWSER_STATUS_OK) {
-        return status;
-    }
-    inverted.reset(token);
-
-    status = get_node_frame(inverted.get(), 0, token);
-    if (status != VS_BROWSER_STATUS_OK) {
-        return status;
-    }
-    frame.reset(token);
-
-    return copy_frame(frame.get(), output);
 }
 
 [[nodiscard]] bool reset_token_output(uint32_t *slot, uint32_t *generation) noexcept {
@@ -762,11 +789,20 @@ extern "C" vs_browser_status vs_browser_core_release(uint32_t slot, uint32_t gen
     return protect([&] { return handles.release(Token{slot, generation}, ResourceKind::Core); });
 }
 
-extern "C" vs_browser_status vs_browser_core_blank_clip(
+extern "C" vs_browser_status vs_browser_core_invoke(
     uint32_t core_slot,
     uint32_t core_generation,
-    uint32_t width,
-    uint32_t height,
+    const uint8_t *namespace_name,
+    uint32_t namespace_length,
+    const uint8_t *function_name,
+    uint32_t function_length,
+    const vs_browser_argument *arguments,
+    uint32_t argument_count,
+    const uint8_t *result_key,
+    uint32_t result_key_length,
+    uint32_t result_index,
+    char *error,
+    uint32_t error_size,
     uint32_t *out_node_slot,
     uint32_t *out_node_generation) noexcept {
     if (!reset_token_output(out_node_slot, out_node_generation)) {
@@ -774,29 +810,35 @@ extern "C" vs_browser_status vs_browser_core_blank_clip(
     }
 
     return protect([&] {
-        Token node;
-        const vs_browser_status status = create_blank_clip(Token{core_slot, core_generation}, width, height, node);
-        if (status == VS_BROWSER_STATUS_OK) {
-            write_token(node, out_node_slot, out_node_generation);
+        vs_browser_status status = VS_BROWSER_STATUS_OK;
+        CoreLease *lease = handles.get<CoreLease>(Token{core_slot, core_generation}, status);
+        if (lease == nullptr) {
+            return status;
         }
-        return status;
-    });
-}
 
-extern "C" vs_browser_status vs_browser_node_invert(
-    uint32_t node_slot,
-    uint32_t node_generation,
-    uint32_t *out_node_slot,
-    uint32_t *out_node_generation) noexcept {
-    if (!reset_token_output(out_node_slot, out_node_generation)) {
-        return VS_BROWSER_STATUS_INVALID_ARGUMENT;
-    }
+        Node node;
+        status = invoke_core(
+            lease->core,
+            namespace_name,
+            namespace_length,
+            function_name,
+            function_length,
+            arguments,
+            argument_count,
+            result_key,
+            result_key_length,
+            result_index,
+            error,
+            error_size,
+            node);
+        if (status != VS_BROWSER_STATUS_OK) {
+            return status;
+        }
 
-    return protect([&] {
-        Token node;
-        const vs_browser_status status = invert_node(Token{node_slot, node_generation}, node);
+        Token token;
+        status = handles.insert(Resource{NodeLease{lease->core, std::move(node)}}, token);
         if (status == VS_BROWSER_STATUS_OK) {
-            write_token(node, out_node_slot, out_node_generation);
+            write_token(token, out_node_slot, out_node_generation);
         }
         return status;
     });
@@ -880,20 +922,4 @@ extern "C" vs_browser_status vs_browser_frame_copy_rgba8(
 
 extern "C" vs_browser_status vs_browser_frame_release(uint32_t slot, uint32_t generation) noexcept {
     return protect([&] { return handles.release(Token{slot, generation}, ResourceKind::Frame); });
-}
-
-extern "C" vs_browser_status vs_browser_render_inverted_blank(
-    uint32_t width,
-    uint32_t height,
-    uint8_t *rgba,
-    uint32_t rgba_size) noexcept {
-    size_t required_size = 0;
-    if (rgba == nullptr || !rgba_byte_count(width, height, required_size)) {
-        return VS_BROWSER_STATUS_INVALID_ARGUMENT;
-    }
-    if (static_cast<size_t>(rgba_size) < required_size) {
-        return VS_BROWSER_STATUS_OUTPUT_TOO_SMALL;
-    }
-
-    return protect([&] { return render_inverted_blank(width, height, std::span<uint8_t>(rgba, required_size)); });
 }

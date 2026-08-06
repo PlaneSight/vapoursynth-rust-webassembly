@@ -1,8 +1,12 @@
-//! Safe, thread-affine ownership of browser-hosted `VapourSynth` resources.
+//! Rust-prefixed opaque-handle forwarders for the browser-hosted `VapourSynth`
+//! core.
 //!
-//! The Emscripten implementation owns only typed opaque tokens. C++ retains
-//! the `VSAPI` table and all actual upstream pointers, so Rust cannot expose a
-//! core, node, frame, map, callback, or error-string pointer by accident.
+//! The Emscripten implementation exports the `vs_rust_*` entry points the
+//! worker runtime calls. Each forwarder validates its spans, pointers, and
+//! argument descriptors against the shared ABI and then delegates to the C++
+//! bridge. C++ retains the `VSAPI` table and all actual upstream pointers, so
+//! Rust never exposes a core, node, frame, map, callback, or error-string
+//! pointer.
 
 #![cfg_attr(target_os = "emscripten", no_std)]
 
@@ -54,6 +58,8 @@ pub enum Error {
     HandleTableExhausted,
     /// The single-worker bridge already owns a live upstream core.
     CoreAlreadyActive,
+    /// The requested plugin namespace or function is not registered.
+    UnknownFunction,
     /// Rust and C++ disagree about their opaque-token ABI version.
     AbiMismatch {
         /// ABI version required by this Rust crate.
@@ -90,12 +96,13 @@ impl Error {
             Self::HandleKindMismatch => browser::STATUS_HANDLE_KIND_MISMATCH,
             Self::HandleTableExhausted => browser::STATUS_HANDLE_TABLE_EXHAUSTED,
             Self::CoreAlreadyActive => browser::STATUS_CORE_ALREADY_ACTIVE,
+            Self::UnknownFunction => browser::STATUS_UNKNOWN_FUNCTION,
             Self::AbiMismatch { .. } => browser::STATUS_ABI_MISMATCH,
             Self::UnknownStatus(status) => status,
         }
     }
 
-    #[cfg(any(test, target_os = "emscripten"))]
+    #[cfg(test)]
     const fn from_status(status: browser::Status) -> Self {
         match status {
             browser::STATUS_INVALID_ARGUMENT => Self::InvalidArgument,
@@ -114,6 +121,7 @@ impl Error {
             browser::STATUS_HANDLE_KIND_MISMATCH => Self::HandleKindMismatch,
             browser::STATUS_HANDLE_TABLE_EXHAUSTED => Self::HandleTableExhausted,
             browser::STATUS_CORE_ALREADY_ACTIVE => Self::CoreAlreadyActive,
+            browser::STATUS_UNKNOWN_FUNCTION => Self::UnknownFunction,
             browser::STATUS_ABI_MISMATCH => Self::AbiMismatch {
                 expected: browser::HANDLE_ABI_VERSION,
                 actual: 0,
@@ -165,416 +173,281 @@ impl FrameDimensions {
 
 #[cfg(target_os = "emscripten")]
 mod emscripten {
-    use core::marker::PhantomData;
-    use core::mem::MaybeUninit;
-    use core::num::NonZeroU32;
     use core::slice;
 
     use vapoursynth_sys::browser;
 
-    use crate::{Error, FrameDimensions};
+    use crate::invocation;
 
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    struct Token {
-        slot: NonZeroU32,
-        generation: NonZeroU32,
-    }
-
-    impl Token {
-        fn from_raw(slot: u32, generation: u32) -> Result<Self, Error> {
-            let slot = NonZeroU32::new(slot).ok_or(Error::ProtocolViolation)?;
-            let generation = NonZeroU32::new(generation).ok_or(Error::ProtocolViolation)?;
-            Ok(Self { slot, generation })
-        }
-
-        const fn slot(self) -> u32 {
-            self.slot.get()
-        }
-
-        const fn generation(self) -> u32 {
-            self.generation.get()
+    /// Zeroes a caller-owned error buffer when one is present.
+    fn clear_error(error: *mut u8, error_size: u32) {
+        if !error.is_null() && error_size != 0 {
+            // Safety: a non-null error pointer with a positive size is
+            // exclusively writable for the duration of the call.
+            unsafe { *error = 0 };
         }
     }
 
-    fn check_status(status: browser::Status) -> Result<(), Error> {
-        if status == browser::STATUS_OK {
-            Ok(())
-        } else {
-            Err(Error::from_status(status))
-        }
+    /// Rejects null or empty byte spans.
+    fn span_ok(bytes: *const u8, length: u32) -> bool {
+        !bytes.is_null() && length != 0
     }
 
-    fn token_from_output(
-        slot: MaybeUninit<u32>,
-        generation: MaybeUninit<u32>,
-    ) -> Result<Token, Error> {
-        // Safety: every C++ token-creation function documents that an OK status
-        // writes both output fields. Callers invoke this only after check_status.
-        let slot = unsafe { slot.assume_init() };
-        // Safety: see the preceding safety argument for the paired output field.
-        let generation = unsafe { generation.assume_init() };
-        Token::from_raw(slot, generation)
-    }
-
-    /// Owns one browser-hosted upstream core through a non-transferable token.
-    pub struct Core {
-        token: Option<Token>,
-        _thread_bound: PhantomData<*mut ()>,
-    }
-
-    impl Core {
-        /// Creates the only live upstream core permitted by this browser build.
-        ///
-        /// # Errors
-        ///
-        /// Returns a bridge error if the ABI does not match, another core or its
-        /// child leases remain live, or upstream core creation fails.
-        pub fn create() -> Result<Self, Error> {
-            // Safety: this imported C function accepts no pointers and has no
-            // ownership transfer. It only reads the bridge's ABI version.
-            let actual_abi = unsafe { browser::vs_browser_handle_abi_version() };
-            if actual_abi != browser::HANDLE_ABI_VERSION {
-                return Err(Error::AbiMismatch {
-                    expected: browser::HANDLE_ABI_VERSION,
-                    actual: actual_abi,
-                });
-            }
-
-            let mut slot = MaybeUninit::uninit();
-            let mut generation = MaybeUninit::uninit();
-            // Safety: both output pointers refer to valid writable local storage
-            // for the duration of the synchronous C++ call.
-            let status = unsafe {
-                browser::vs_browser_core_create(slot.as_mut_ptr(), generation.as_mut_ptr())
-            };
-            check_status(status)?;
-            let token = token_from_output(slot, generation)?;
-            Ok(Self {
-                token: Some(token),
-                _thread_bound: PhantomData,
-            })
-        }
-
-        /// Creates an RGB24 `std.BlankClip` node associated with this core.
-        ///
-        /// # Errors
-        ///
-        /// Returns a bridge error if the core is closed, the dimensions exceed
-        /// the fixed frame budget, or the plugin invocation fails.
-        pub fn blank_clip(&self, width: u32, height: u32) -> Result<Node<'_>, Error> {
-            let core = self.token.ok_or(Error::Closed)?;
-            let mut slot = MaybeUninit::uninit();
-            let mut generation = MaybeUninit::uninit();
-            // Safety: the core token is privately held, and both output pointers
-            // refer to valid writable local storage for this synchronous call.
-            let status = unsafe {
-                browser::vs_browser_core_blank_clip(
-                    core.slot(),
-                    core.generation(),
-                    width,
-                    height,
-                    slot.as_mut_ptr(),
-                    generation.as_mut_ptr(),
-                )
-            };
-            check_status(status)?;
-            let token = token_from_output(slot, generation)?;
-            Ok(Node {
-                token: Some(token),
-                _core: PhantomData,
-                _thread_bound: PhantomData,
-            })
-        }
-
-        /// Releases the core token before drop.
-        ///
-        /// # Errors
-        ///
-        /// Returns [`Error::Closed`] when called more than once, or a bridge
-        /// error if the token has become invalid unexpectedly.
-        pub fn close(&mut self) -> Result<(), Error> {
-            let token = self.token.ok_or(Error::Closed)?;
-            // Safety: this token was created by the paired C++ constructor and
-            // is kept private, so its slot and generation are well-formed.
-            let status =
-                unsafe { browser::vs_browser_core_release(token.slot(), token.generation()) };
-            check_status(status)?;
-            self.token = None;
-            Ok(())
-        }
-    }
-
-    impl Drop for Core {
-        fn drop(&mut self) {
-            if let Some(token) = self.token.take() {
-                // Safety: a live safe wrapper owns exactly this matching token.
-                // Drop cannot report a release error and must not panic across C.
-                let _ =
-                    unsafe { browser::vs_browser_core_release(token.slot(), token.generation()) };
-            }
-        }
-    }
-
-    /// Owns one browser-hosted upstream node associated with a [`Core`].
-    pub struct Node<'core> {
-        token: Option<Token>,
-        _core: PhantomData<&'core Core>,
-        _thread_bound: PhantomData<*mut ()>,
-    }
-
-    impl<'core> Node<'core> {
-        /// Creates an `std.Invert` node that retains this node as its input.
-        ///
-        /// # Errors
-        ///
-        /// Returns [`Error::Closed`] when this node was released, or a bridge
-        /// error if the upstream invocation fails.
-        pub fn invert(&self) -> Result<Self, Error> {
-            let source = self.token.ok_or(Error::Closed)?;
-            let mut slot = MaybeUninit::uninit();
-            let mut generation = MaybeUninit::uninit();
-            // Safety: the source token is privately owned by this live wrapper,
-            // and both output pointers reference writable local storage.
-            let status = unsafe {
-                browser::vs_browser_node_invert(
-                    source.slot(),
-                    source.generation(),
-                    slot.as_mut_ptr(),
-                    generation.as_mut_ptr(),
-                )
-            };
-            check_status(status)?;
-            let token = token_from_output(slot, generation)?;
-            Ok(Self {
-                token: Some(token),
-                _core: PhantomData,
-                _thread_bound: PhantomData,
-            })
-        }
-
-        /// Requests one synchronous frame from this node.
-        ///
-        /// # Errors
-        ///
-        /// Returns [`Error::Closed`] when this node was released, or a bridge
-        /// error if the request or frame allocation fails.
-        pub fn frame(&self, frame_number: u32) -> Result<Frame<'core>, Error> {
-            let node = self.token.ok_or(Error::Closed)?;
-            let mut slot = MaybeUninit::uninit();
-            let mut generation = MaybeUninit::uninit();
-            // Safety: the node token is privately owned by this live wrapper,
-            // and both output pointers reference writable local storage.
-            let status = unsafe {
-                browser::vs_browser_node_get_frame(
-                    node.slot(),
-                    node.generation(),
-                    frame_number,
-                    slot.as_mut_ptr(),
-                    generation.as_mut_ptr(),
-                )
-            };
-            check_status(status)?;
-            let token = token_from_output(slot, generation)?;
-            Ok(Frame {
-                token: Some(token),
-                _core: PhantomData,
-                _thread_bound: PhantomData,
-            })
-        }
-
-        /// Releases the node token before drop.
-        ///
-        /// # Errors
-        ///
-        /// Returns [`Error::Closed`] when called more than once, or a bridge
-        /// error if the token has become invalid unexpectedly.
-        pub fn close(&mut self) -> Result<(), Error> {
-            let token = self.token.ok_or(Error::Closed)?;
-            // Safety: this token was created by the paired C++ constructor and
-            // is kept private, so its slot and generation are well-formed.
-            let status =
-                unsafe { browser::vs_browser_node_release(token.slot(), token.generation()) };
-            check_status(status)?;
-            self.token = None;
-            Ok(())
-        }
-    }
-
-    impl Drop for Node<'_> {
-        fn drop(&mut self) {
-            if let Some(token) = self.token.take() {
-                // Safety: a live safe wrapper owns exactly this matching token.
-                // Drop cannot report a release error and must not panic across C.
-                let _ =
-                    unsafe { browser::vs_browser_node_release(token.slot(), token.generation()) };
-            }
-        }
-    }
-
-    /// Owns one browser-hosted frame associated with a [`Core`].
-    pub struct Frame<'core> {
-        token: Option<Token>,
-        _core: PhantomData<&'core Core>,
-        _thread_bound: PhantomData<*mut ()>,
-    }
-
-    impl Frame<'_> {
-        /// Returns this frame's validated RGB24 dimensions.
-        ///
-        /// # Errors
-        ///
-        /// Returns [`Error::Closed`] when this frame was released, or a bridge
-        /// error when upstream did not return the expected frame representation.
-        pub fn dimensions(&self) -> Result<FrameDimensions, Error> {
-            let frame = self.token.ok_or(Error::Closed)?;
-            let mut width = MaybeUninit::uninit();
-            let mut height = MaybeUninit::uninit();
-            // Safety: the frame token is privately owned by this live wrapper,
-            // and both output pointers reference writable local storage.
-            let status = unsafe {
-                browser::vs_browser_frame_dimensions(
-                    frame.slot(),
-                    frame.generation(),
-                    width.as_mut_ptr(),
-                    height.as_mut_ptr(),
-                )
-            };
-            check_status(status)?;
-            // Safety: an OK status from the C++ bridge writes both dimensions.
-            let width = unsafe { width.assume_init() };
-            // Safety: see the preceding safety argument for the paired output.
-            let height = unsafe { height.assume_init() };
-            Ok(FrameDimensions::new(width, height))
-        }
-
-        /// Returns the exact caller-owned RGBA8 byte count required for this frame.
-        ///
-        /// # Errors
-        ///
-        /// Returns [`Error::Closed`] when this frame was released, or a bridge
-        /// error when upstream did not return an eligible RGB24 frame.
-        pub fn rgba8_size(&self) -> Result<u32, Error> {
-            let frame = self.token.ok_or(Error::Closed)?;
-            let mut size = MaybeUninit::uninit();
-            // Safety: the frame token is privately owned by this live wrapper,
-            // and the output pointer references writable local storage.
-            let status = unsafe {
-                browser::vs_browser_frame_rgba8_size(
-                    frame.slot(),
-                    frame.generation(),
-                    size.as_mut_ptr(),
-                )
-            };
-            check_status(status)?;
-            // Safety: an OK status from the C++ bridge writes the output size.
-            Ok(unsafe { size.assume_init() })
-        }
-
-        /// Copies this frame into the caller's RGBA8 storage without allocation.
-        ///
-        /// # Errors
-        ///
-        /// Returns [`Error::OutputTooSmall`] when `output` is shorter than the
-        /// required byte count, or a bridge error if this frame is no longer valid.
-        pub fn copy_rgba8(&self, output: &mut [u8]) -> Result<(), Error> {
-            let frame = self.token.ok_or(Error::Closed)?;
-            let required_size = self.rgba8_size()?;
-            let output_size = u32::try_from(output.len()).map_err(|_| Error::InvalidArgument)?;
-            if output_size < required_size {
-                return Err(Error::OutputTooSmall);
-            }
-
-            // Safety: the token is privately owned by this live wrapper. The
-            // mutable slice guarantees a non-null, exclusive pointer valid for
-            // output_size bytes, and C++ retains neither pointer nor contents.
-            let status = unsafe {
-                browser::vs_browser_frame_copy_rgba8(
-                    frame.slot(),
-                    frame.generation(),
-                    output.as_mut_ptr(),
-                    output_size,
-                )
-            };
-            check_status(status)
-        }
-
-        /// Releases the frame token before drop.
-        ///
-        /// # Errors
-        ///
-        /// Returns [`Error::Closed`] when called more than once, or a bridge
-        /// error if the token has become invalid unexpectedly.
-        pub fn close(&mut self) -> Result<(), Error> {
-            let token = self.token.ok_or(Error::Closed)?;
-            // Safety: this token was created by the paired C++ constructor and
-            // is kept private, so its slot and generation are well-formed.
-            let status =
-                unsafe { browser::vs_browser_frame_release(token.slot(), token.generation()) };
-            check_status(status)?;
-            self.token = None;
-            Ok(())
-        }
-    }
-
-    impl Drop for Frame<'_> {
-        fn drop(&mut self) {
-            if let Some(token) = self.token.take() {
-                // Safety: a live safe wrapper owns exactly this matching token.
-                // Drop cannot report a release error and must not panic across C.
-                let _ =
-                    unsafe { browser::vs_browser_frame_release(token.slot(), token.generation()) };
-            }
-        }
-    }
-
-    fn render_inverted_blank(width: u32, height: u32, output: &mut [u8]) -> Result<(), Error> {
-        let mut core = Core::create()?;
-        {
-            let mut blank = core.blank_clip(width, height)?;
-            let mut inverted = blank.invert()?;
-            blank.close()?;
-
-            let mut frame = inverted.frame(0)?;
-            inverted.close()?;
-            frame.copy_rgba8(output)?;
-            frame.close()?;
-        }
-        core.close()
-    }
-
-    /// Renders an inverted blank frame through the safe Rust ownership layer.
+    /// Creates the single live upstream core through the Rust-prefixed ABI.
+    ///
+    /// Checks the opaque-token ABI version before forwarding and zeroes both
+    /// outputs on every failure.
     ///
     /// # Safety
     ///
-    /// `rgba` must be non-null, exclusively writable for `rgba_size` bytes,
-    /// and remain valid until this synchronous call returns. C++ retains neither
-    /// the pointer nor the output bytes.
+    /// `out_slot` and `out_generation` must be non-null and writable for the
+    /// duration of the synchronous call.
     #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn vs_rust_render_inverted_blank(
-        width: u32,
-        height: u32,
+    pub unsafe extern "C" fn vs_rust_core_create(
+        out_slot: *mut u32,
+        out_generation: *mut u32,
+    ) -> browser::Status {
+        if out_slot.is_null() || out_generation.is_null() {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: both outputs were checked non-null and are writable.
+        unsafe {
+            *out_slot = 0;
+            *out_generation = 0;
+        }
+
+        // Safety: the ABI version query takes no pointers.
+        let actual_abi = unsafe { browser::vs_browser_handle_abi_version() };
+        if actual_abi != browser::HANDLE_ABI_VERSION {
+            return browser::STATUS_ABI_MISMATCH;
+        }
+
+        // Safety: the C++ bridge validates and zeroes the outputs itself on
+        // every failure path; the pointers remain writable for the call.
+        unsafe { browser::vs_browser_core_create(out_slot, out_generation) }
+    }
+
+    /// Releases an opaque core token through the Rust-prefixed ABI.
+    ///
+    /// # Safety
+    ///
+    /// `slot` and `generation` must name a token created by
+    /// [`vs_rust_core_create`] unless the call is intentionally probing for
+    /// an invalid handle.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_core_release(slot: u32, generation: u32) -> browser::Status {
+        // Safety: pure scalar forward with no pointer arguments.
+        unsafe { browser::vs_browser_core_release(slot, generation) }
+    }
+
+    /// Invokes one plugin function generically through the Rust-prefixed ABI.
+    ///
+    /// Validates every span, pointer, and argument descriptor before
+    /// forwarding; the C++ bridge re-validates as the ABI authority. Both
+    /// output fields are zeroed before work begins and the caller error buffer
+    /// is NUL-terminated when present.
+    ///
+    /// # Safety
+    ///
+    /// Every byte span (`namespace_name`, `function_name`, `result_key`, and
+    /// each descriptor's key and values) must be valid and readable for its
+    /// declared length, aligned as its kind requires, and stable for the
+    /// duration of the synchronous call. `error` must be writable for
+    /// `error_size` bytes when `error_size` is non-zero, and both output
+    /// pointers must be non-null and writable.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_core_invoke(
+        core_slot: u32,
+        core_generation: u32,
+        namespace_name: *const u8,
+        namespace_length: u32,
+        function_name: *const u8,
+        function_length: u32,
+        arguments: *const browser::Argument,
+        argument_count: u32,
+        result_key: *const u8,
+        result_key_length: u32,
+        result_index: u32,
+        error: *mut u8,
+        error_size: u32,
+        out_node_slot: *mut u32,
+        out_node_generation: *mut u32,
+    ) -> browser::Status {
+        if out_node_slot.is_null() || out_node_generation.is_null() {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: both outputs were checked non-null and are writable.
+        unsafe {
+            *out_node_slot = 0;
+            *out_node_generation = 0;
+        }
+
+        if !span_ok(namespace_name, namespace_length)
+            || !span_ok(function_name, function_length)
+            || !span_ok(result_key, result_key_length)
+            || (error_size != 0 && error.is_null())
+            || (argument_count != 0 && arguments.is_null())
+        {
+            clear_error(error, error_size);
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+
+        if argument_count != 0 {
+            // Safety: the caller guarantees `argument_count` readable
+            // descriptors at `arguments`; each is validated before use.
+            let descriptors = unsafe { slice::from_raw_parts(arguments, argument_count as usize) };
+            for descriptor in descriptors {
+                // Safety: the enclosing C ABI contract keeps every non-null
+                // descriptor span readable for this synchronous invocation.
+                if unsafe { invocation::Argument::from_descriptor(descriptor) }.is_err() {
+                    clear_error(error, error_size);
+                    return browser::STATUS_INVALID_ARGUMENT;
+                }
+            }
+        }
+
+        // Safety: every span and pointer above was validated, and the C++
+        // bridge re-validates everything before touching upstream state.
+        unsafe {
+            browser::vs_browser_core_invoke(
+                core_slot,
+                core_generation,
+                namespace_name,
+                namespace_length,
+                function_name,
+                function_length,
+                arguments,
+                argument_count,
+                result_key,
+                result_key_length,
+                result_index,
+                error,
+                error_size,
+                out_node_slot,
+                out_node_generation,
+            )
+        }
+    }
+
+    /// Requests one synchronous frame through the Rust-prefixed ABI.
+    ///
+    /// # Safety
+    ///
+    /// Both output pointers must be non-null and writable for the duration of
+    /// the synchronous call.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_node_get_frame(
+        node_slot: u32,
+        node_generation: u32,
+        frame_number: u32,
+        out_frame_slot: *mut u32,
+        out_frame_generation: *mut u32,
+    ) -> browser::Status {
+        if out_frame_slot.is_null() || out_frame_generation.is_null() {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: the C++ bridge validates the token and zeroes both outputs
+        // on every failure path; the pointers remain writable for the call.
+        unsafe {
+            browser::vs_browser_node_get_frame(
+                node_slot,
+                node_generation,
+                frame_number,
+                out_frame_slot,
+                out_frame_generation,
+            )
+        }
+    }
+
+    /// Releases an opaque node token through the Rust-prefixed ABI.
+    ///
+    /// # Safety
+    ///
+    /// `slot` and `generation` must name a token produced by
+    /// [`vs_rust_core_invoke`] unless the call is intentionally probing for an
+    /// invalid handle.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_node_release(slot: u32, generation: u32) -> browser::Status {
+        // Safety: pure scalar forward with no pointer arguments.
+        unsafe { browser::vs_browser_node_release(slot, generation) }
+    }
+
+    /// Returns the dimensions of an opaque RGB24 frame token.
+    ///
+    /// # Safety
+    ///
+    /// Both output pointers must be non-null and writable for the duration of
+    /// the synchronous call.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_frame_dimensions(
+        slot: u32,
+        generation: u32,
+        out_width: *mut u32,
+        out_height: *mut u32,
+    ) -> browser::Status {
+        if out_width.is_null() || out_height.is_null() {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: the C++ bridge zeroes both outputs on failure; the pointers
+        // remain writable for the synchronous call.
+        unsafe { browser::vs_browser_frame_dimensions(slot, generation, out_width, out_height) }
+    }
+
+    /// Returns the exact RGBA8 byte count for an opaque frame token.
+    ///
+    /// # Safety
+    ///
+    /// `out_size` must be non-null and writable for the duration of the
+    /// synchronous call.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_frame_rgba8_size(
+        slot: u32,
+        generation: u32,
+        out_size: *mut u32,
+    ) -> browser::Status {
+        if out_size.is_null() {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: the C++ bridge zeroes the output on failure; the pointer
+        // remains writable for the synchronous call.
+        unsafe { browser::vs_browser_frame_rgba8_size(slot, generation, out_size) }
+    }
+
+    /// Copies an opaque frame token into caller-owned RGBA8 memory.
+    ///
+    /// # Safety
+    ///
+    /// `rgba` must be non-null and exclusively writable for `rgba_size` bytes
+    /// and remain valid until the synchronous call returns. C++ retains
+    /// neither the pointer nor the output bytes.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_frame_copy_rgba8(
+        slot: u32,
+        generation: u32,
         rgba: *mut u8,
         rgba_size: u32,
     ) -> browser::Status {
         if rgba.is_null() {
             return browser::STATUS_INVALID_ARGUMENT;
         }
-        let Ok(length) = usize::try_from(rgba_size) else {
-            return browser::STATUS_INVALID_ARGUMENT;
-        };
-
-        // Safety: the C caller upholds the pointer, length, and exclusivity
+        // Safety: the caller upholds the pointer, length, and exclusivity
         // contract documented on this entry point for the synchronous call.
-        let output = unsafe { slice::from_raw_parts_mut(rgba, length) };
-        match render_inverted_blank(width, height, output) {
-            Ok(()) => browser::STATUS_OK,
-            Err(error) => error.status(),
-        }
+        unsafe { browser::vs_browser_frame_copy_rgba8(slot, generation, rgba, rgba_size) }
+    }
+
+    /// Releases an opaque frame token through the Rust-prefixed ABI.
+    ///
+    /// # Safety
+    ///
+    /// `slot` and `generation` must name a token produced by
+    /// [`vs_rust_node_get_frame`] unless the call is intentionally probing for
+    /// an invalid handle.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_frame_release(slot: u32, generation: u32) -> browser::Status {
+        // Safety: pure scalar forward with no pointer arguments.
+        unsafe { browser::vs_browser_frame_release(slot, generation) }
     }
 }
-
-#[cfg(target_os = "emscripten")]
-pub use emscripten::{Core, Frame, Node};
 
 #[cfg(test)]
 mod tests {
@@ -590,6 +463,14 @@ mod tests {
         assert_eq!(
             Error::from_status(browser::STATUS_INVALID_HANDLE),
             Error::InvalidHandle
+        );
+        assert_eq!(
+            Error::from_status(browser::STATUS_UNKNOWN_FUNCTION),
+            Error::UnknownFunction
+        );
+        assert_eq!(
+            Error::UnknownFunction.status(),
+            browser::STATUS_UNKNOWN_FUNCTION
         );
         assert_eq!(Error::from_status(-123), Error::UnknownStatus(-123));
     }

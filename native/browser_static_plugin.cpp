@@ -3,9 +3,12 @@
 #include "internalfilters.h"
 #include "version.h"
 
-// This deliberately exposes only the implementation units needed for the
-// first proof. Other std functions may be registered by those units, but only
-// BlankClip and Invert are part of the browser runtime contract.
+// This exposes the upstream std units that the corpus and the browser
+// authoring contract rely on: the generic filters (Invert, Levels, Median,
+// Minimum, Maximum, ...), the expression evaluator (Expr, scalar-interpreter
+// fallback on wasm), the lookup-table family (Lut, Lut2, Lut3), and the
+// simple filters (BlankClip, Crop, AddBorders, flips, turns, stacks,
+// ShufflePlanes, ...).
 void browserStaticStdPluginInitialize(VSPlugin *plugin, const VSPLUGINAPI *vspapi) {
     vspapi->configPlugin(
         VSH_STD_PLUGIN_ID,
@@ -15,6 +18,8 @@ void browserStaticStdPluginInitialize(VSPlugin *plugin, const VSPLUGINAPI *vspap
         VAPOURSYNTH_API_VERSION,
         pcModifiable,
         plugin);
+    exprInitialize(plugin, vspapi);
     genericInitialize(plugin, vspapi);
+    lutInitialize(plugin, vspapi);
     stdlibInitialize(plugin, vspapi);
 }

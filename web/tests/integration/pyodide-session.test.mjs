@@ -8,31 +8,16 @@ import { PyodideSession } from "../../runtime/pyodide/session.mjs";
 
 test("installs and executes the browser vapoursynth package in real Pyodide", { timeout: 120_000 }, async () => {
   const calls = [];
-  let nextNodeId = 1;
   const workerClient = {
     async status() {
       return { schemaVersion: 1, upstreamLinked: true };
     },
-    async createBlankClip(width, height, format, length) {
-      calls.push(["createBlankClip", width, height, format, length]);
-      return { nodeId: nextNodeId++ };
-    },
-    async invert(nodeId) {
-      calls.push(["invert", nodeId]);
-      return { nodeId: nextNodeId++ };
-    },
-    async setOutput(index, nodeId) {
-      calls.push(["setOutput", index, nodeId]);
-    },
-    async releaseNode(nodeId) {
-      calls.push(["releaseNode", nodeId]);
-    },
     async resetGraph() {
       calls.push(["resetGraph"]);
     },
-    async listOutputs() {
-      calls.push(["listOutputs"]);
-      return { outputs: [{ index: 0, width: 3, height: 2, format: "RGB24", length: 1 }] };
+    async executeGraph(plan) {
+      calls.push(["executeGraph", plan]);
+      return { outputs: [{ index: 0, width: 3, height: 2 }] };
     },
     async renderOutput() {
       return { width: 3, height: 2, rgba: new ArrayBuffer(24) };
@@ -46,22 +31,35 @@ test("installs and executes the browser vapoursynth package in real Pyodide", { 
   const result = await session.runScript(
     [
       "import vapoursynth as vs",
-      "blank = await vs.core.std.BlankClip(width=3, height=2)",
-      "inverted = await vs.core.std.Invert(blank)",
-      "await vs.set_output(0, inverted)",
+      "blank = vs.core.std.BlankClip(width=3, height=2)",
+      "inverted = vs.core.std.Invert(blank)",
+      "inverted.set_output(0)",
     ].join("\n"),
     "authoring.vpy",
   );
 
   assert.deepEqual(result, {
-    outputs: [{ index: 0, width: 3, height: 2, format: "RGB24", length: 1 }],
+    outputs: [{ index: 0, width: 3, height: 2 }],
   });
-  assert.deepEqual(calls.slice(0, 5), [
-    ["resetGraph"],
-    ["createBlankClip", 3, 2, "RGB24", 1],
-    ["invert", 1],
-    ["setOutput", 0, 2],
-    ["listOutputs"],
-  ]);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0], ["resetGraph"]);
+  assert.equal(calls[1][0], "executeGraph");
+  const plan = calls[1][1];
+  assert.equal(plan.version, 1);
+  assert.equal(plan.operations.length, 2);
+  const [blank, invert] = plan.operations;
+  assert.equal(blank.namespace, "std");
+  assert.equal(blank.function, "BlankClip");
+  assert.deepEqual(
+    blank.arguments.filter(({ key }) => key === "width" || key === "height"),
+    [
+      { key: "width", kind: "int", value: 3 },
+      { key: "height", kind: "int", value: 2 },
+    ],
+  );
+  assert.equal(invert.namespace, "std");
+  assert.equal(invert.function, "Invert");
+  assert.deepEqual(invert.arguments, [{ key: "clip", kind: "node", value: blank.id }]);
+  assert.deepEqual(plan.outputs, [{ index: 0, node: invert.id }]);
   session.free();
 });

@@ -1,5 +1,179 @@
 const SCHEMA_VERSION = 1;
 const MAX_SOURCE_LENGTH = 1_000_000;
+const U32_MAX = 0xffff_ffff;
+
+export const PLAN_SCHEMA_VERSION = 1;
+export const MAX_PLAN_OPERATIONS = 64;
+export const MAX_PLAN_ARGUMENTS = 64;
+export const MAX_PLAN_ARRAY_LENGTH = 4_096;
+export const MAX_PLAN_DATA_LENGTH = 65_536;
+export const MAX_PLAN_NAME_LENGTH = 64;
+export const MAX_PLAN_OUTPUTS = 16;
+export const MAX_SCRIPT_DURATION_MS = 30_000;
+
+const PLAN_ARGUMENT_KINDS = new Set(["int", "float", "data", "node", "intArray", "floatArray", "nodeArray"]);
+
+/**
+ * Validates a plan drained from the Python authoring module before it is
+ * forwarded to the VapourSynth worker. Count and array-length violations
+ * reject with "plan-limit"; structural violations reject with "invalid-plan".
+ * The validated plan is returned unchanged.
+ */
+export function validateDrainedPlan(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw planError("invalid-plan", "drained plan must be an object");
+  }
+  if (value.version !== PLAN_SCHEMA_VERSION) {
+    throw planError("invalid-plan", `drained plan must declare schema version ${PLAN_SCHEMA_VERSION}`);
+  }
+  if (!Array.isArray(value.operations)) {
+    throw planError("invalid-plan", "drained plan operations must be an array");
+  }
+  if (value.operations.length > MAX_PLAN_OPERATIONS) {
+    throw planError("plan-limit", `drained plan exceeds the ${MAX_PLAN_OPERATIONS} operation limit`);
+  }
+
+  const operationIds = new Set();
+  for (const operation of value.operations) {
+    validatePlanOperation(operation, operationIds);
+  }
+
+  if (!Array.isArray(value.outputs)) {
+    throw planError("invalid-plan", "drained plan outputs must be an array");
+  }
+  if (value.outputs.length > MAX_PLAN_OUTPUTS) {
+    throw planError("plan-limit", `drained plan exceeds the ${MAX_PLAN_OUTPUTS} output limit`);
+  }
+  for (const output of value.outputs) {
+    validatePlanOutput(output, operationIds);
+  }
+
+  return value;
+}
+
+function validatePlanOperation(operation, operationIds) {
+  if (!operation || typeof operation !== "object" || Array.isArray(operation)) {
+    throw planError("invalid-plan", "drained plan operation must be an object");
+  }
+  if (!Number.isInteger(operation.id) || operation.id <= 0 || operation.id > U32_MAX) {
+    throw planError("invalid-plan", "drained plan operation id must be a non-zero u32");
+  }
+  if (operationIds.has(operation.id)) {
+    throw planError("invalid-plan", `drained plan repeats operation id ${operation.id}`);
+  }
+  if (typeof operation.namespace !== "string" || operation.namespace.length === 0 || operation.namespace.length > MAX_PLAN_NAME_LENGTH) {
+    throw planError("invalid-plan", "drained plan operation namespace must be a non-empty string");
+  }
+  if (typeof operation.function !== "string" || operation.function.length === 0 || operation.function.length > MAX_PLAN_NAME_LENGTH) {
+    throw planError("invalid-plan", "drained plan operation function must be a non-empty string");
+  }
+  if (!Array.isArray(operation.arguments)) {
+    throw planError("invalid-plan", "drained plan operation arguments must be an array");
+  }
+  if (operation.arguments.length > MAX_PLAN_ARGUMENTS) {
+    throw planError("plan-limit", `drained plan operation exceeds the ${MAX_PLAN_ARGUMENTS} argument limit`);
+  }
+
+  for (const argument of operation.arguments) {
+    validatePlanArgument(argument, operationIds);
+  }
+  operationIds.add(operation.id);
+}
+
+function validatePlanArgument(argument, operationIds) {
+  if (!argument || typeof argument !== "object" || Array.isArray(argument)) {
+    throw planError("invalid-plan", "drained plan argument must be an object");
+  }
+  if (typeof argument.key !== "string" || argument.key.length === 0 || argument.key.length > MAX_PLAN_NAME_LENGTH) {
+    throw planError("invalid-plan", "drained plan argument key must be a non-empty string");
+  }
+  if (!PLAN_ARGUMENT_KINDS.has(argument.kind)) {
+    throw planError("invalid-plan", `drained plan argument kind ${JSON.stringify(argument.kind)} is unsupported`);
+  }
+
+  switch (argument.kind) {
+    case "int":
+      if (!Number.isSafeInteger(argument.value)) {
+        throw planError("invalid-plan", `drained plan argument "${argument.key}" must be an int`);
+      }
+      break;
+    case "float":
+      if (typeof argument.value !== "number" || !Number.isFinite(argument.value)) {
+        throw planError("invalid-plan", `drained plan argument "${argument.key}" must be a float`);
+      }
+      break;
+    case "data":
+      if (typeof argument.value !== "string" || argument.value.length === 0 || argument.value.length > MAX_PLAN_DATA_LENGTH) {
+        throw planError("invalid-plan", `drained plan argument "${argument.key}" must be a data string`);
+      }
+      break;
+    case "node":
+      requirePlanNodeReference(argument.value, operationIds, `drained plan argument "${argument.key}"`);
+      break;
+    case "intArray":
+      requirePlanArray(
+        argument.value,
+        `drained plan argument "${argument.key}"`,
+        (item) => Number.isInteger(item),
+        "int",
+      );
+      break;
+    case "floatArray":
+      requirePlanArray(
+        argument.value,
+        `drained plan argument "${argument.key}"`,
+        (item) => typeof item === "number" && Number.isFinite(item),
+        "float",
+      );
+      break;
+    case "nodeArray":
+      requirePlanArray(
+        argument.value,
+        `drained plan argument "${argument.key}"`,
+        (item) => operationIds.has(item),
+        "prior operation reference",
+      );
+      break;
+  }
+}
+
+function requirePlanArray(value, label, isValid, itemKind) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw planError("invalid-plan", `${label} must be a non-empty array`);
+  }
+  if (value.length > MAX_PLAN_ARRAY_LENGTH) {
+    throw planError("plan-limit", `${label} exceeds the ${MAX_PLAN_ARRAY_LENGTH} element limit`);
+  }
+  for (const item of value) {
+    if (!isValid(item)) {
+      throw planError("invalid-plan", `${label} items must be ${itemKind}s`);
+    }
+  }
+}
+
+function requirePlanNodeReference(value, operationIds, label) {
+  if (!Number.isInteger(value) || !operationIds.has(value)) {
+    throw planError("invalid-plan", `${label} must reference a prior planned operation`);
+  }
+}
+
+function validatePlanOutput(output, operationIds) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    throw planError("invalid-plan", "drained plan output must be an object");
+  }
+  if (!Number.isInteger(output.index) || output.index < 0 || output.index > U32_MAX) {
+    throw planError("invalid-plan", "drained plan output index must be a u32");
+  }
+  if (!Number.isInteger(output.node) || !operationIds.has(output.node)) {
+    throw planError("invalid-plan", "drained plan output node must reference a planned operation");
+  }
+}
+
+function planError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
 
 export function createPyodideWorkerHandler(session) {
   if (!session || typeof session.status !== "function" || typeof session.runScript !== "function" || typeof session.renderOutput !== "function") {
@@ -166,67 +340,10 @@ function normalizeError(error) {
   return { code: "runtime-error", message: "unknown Python worker runtime failure" };
 }
 
-const U32_MAX = 0xffff_ffff;
-
-export const PYODIDE_RPC_MODULE = "_vapoursynth_rpc";
-
 /**
- * Makes the worker client available to Pyodide as a tiny asynchronous module.
- * Python sees promises as awaitables; it never sees the Emscripten module or a
- * native VapourSynth resource.
+ * The JS module name the Python package installer imports. The forwarding RPC
+ * bridge was removed when graph plans moved to Python-side recording; the
+ * name stays importable because the installer imports it unconditionally
+ * (see web/runtime/pyodide/package.mjs).
  */
-export function createPyodideRpc(workerClient) {
-  assertMethods(workerClient, [
-    "createBlankClip",
-    "invert",
-    "setOutput",
-    "releaseNode",
-  ]);
-
-  return Object.freeze({
-    async create_blank_clip(width, height, format, length) {
-      const node = await workerClient.createBlankClip(width, height, format, length);
-      return requireNodeId(node?.nodeId);
-    },
-
-    async invert(nodeId) {
-      const node = await workerClient.invert(nodeId);
-      return requireNodeId(node?.nodeId);
-    },
-
-    async set_output(index, nodeId) {
-      await workerClient.setOutput(index, nodeId);
-    },
-
-    async release_node(nodeId) {
-      await workerClient.releaseNode(nodeId);
-    },
-
-    release_node_later(nodeId) {
-      void Promise.resolve()
-        .then(() => workerClient.releaseNode(nodeId))
-        .catch(() => {});
-    },
-  });
-}
-
-function assertMethods(value, methodNames) {
-  if (!value || typeof value !== "object") {
-    throw new TypeError("workerClient must be an object");
-  }
-
-  for (const methodName of methodNames) {
-    if (typeof value[methodName] !== "function") {
-      throw new TypeError(`workerClient must provide ${methodName}()`);
-    }
-  }
-}
-
-function requireNodeId(value) {
-  if (!Number.isInteger(value) || value <= 0 || value > U32_MAX) {
-    const error = new Error("worker returned an invalid opaque VideoNode token");
-    error.code = "rpc-protocol";
-    throw error;
-  }
-  return value;
-}
+export const PYODIDE_RPC_MODULE = "_vapoursynth_rpc";

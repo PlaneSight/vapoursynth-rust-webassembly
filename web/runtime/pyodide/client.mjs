@@ -1,3 +1,5 @@
+import { MAX_SCRIPT_DURATION_MS } from "../../protocol/pyodide.mjs";
+
 export class PyodideWorkerClient {
   #worker;
   #nextRequestId = 1;
@@ -9,8 +11,16 @@ export class PyodideWorkerClient {
   #startupTimer;
   #readyState = "pending";
   #terminalError;
+  #scriptTimeoutMs;
 
-  constructor(worker, { onDiagnostic = () => {}, startupTimeoutMs = 60_000 } = {}) {
+  constructor(
+    worker,
+    {
+      onDiagnostic = () => {},
+      startupTimeoutMs = 60_000,
+      scriptTimeoutMs = MAX_SCRIPT_DURATION_MS,
+    } = {},
+  ) {
     if (!worker || typeof worker.postMessage !== "function") {
       throw new TypeError("worker must provide postMessage()");
     }
@@ -20,9 +30,13 @@ export class PyodideWorkerClient {
     if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs <= 0) {
       throw new TypeError("startupTimeoutMs must be a positive number");
     }
+    if (!Number.isFinite(scriptTimeoutMs) || scriptTimeoutMs <= 0) {
+      throw new TypeError("scriptTimeoutMs must be a positive number");
+    }
 
     this.#worker = worker;
     this.#onDiagnostic = onDiagnostic;
+    this.#scriptTimeoutMs = scriptTimeoutMs;
     this.#ready = new Promise((resolve, reject) => {
       this.#resolveReady = resolve;
       this.#rejectReady = reject;
@@ -55,7 +69,7 @@ export class PyodideWorkerClient {
   }
 
   runScript(source, filename = "script.vpy") {
-    return this.#request("runScript", { source, filename });
+    return this.#request("runScript", { source, filename }, this.#scriptTimeoutMs);
   }
 
   renderOutput(index, frame = 0) {
@@ -72,7 +86,7 @@ export class PyodideWorkerClient {
     this.#worker.terminate?.();
   }
 
-  #request(type, payload = {}) {
+  #request(type, payload = {}, timeoutMs = 0) {
     if (this.#terminalError) {
       return Promise.reject(this.#terminalError);
     }
@@ -85,8 +99,12 @@ export class PyodideWorkerClient {
       if (this.#terminalError) {
         throw this.#terminalError;
       }
+      let timer;
       const promise = new Promise((resolve, reject) => {
-        this.#pending.set(requestId, { resolve, reject, type, startedAt });
+        if (timeoutMs > 0) {
+          timer = setTimeout(() => this.#timeoutRequest(requestId, type, timeoutMs), timeoutMs);
+        }
+        this.#pending.set(requestId, { resolve, reject, type, startedAt, timer });
       });
       this.#diagnostic("info", "request", `→ ${type} #${requestId}`);
       this.#worker.postMessage({ schemaVersion: 1, requestId, type, ...payload });
@@ -98,6 +116,20 @@ export class PyodideWorkerClient {
     const requestId = this.#nextRequestId;
     this.#nextRequestId = this.#nextRequestId === 0xffff_ffff ? 1 : this.#nextRequestId + 1;
     return requestId;
+  }
+
+  #timeoutRequest(requestId, type, timeoutMs) {
+    if (!this.#pending.has(requestId)) {
+      return;
+    }
+    const error = new Error(`script exceeded the ${timeoutMs} ms wall-clock limit`);
+    error.code = "script-timeout";
+    this.#diagnostic("error", "request", `← ${type} #${requestId}: ${error.code}: ${error.message}`);
+    this.#failAll(error);
+    // The deadline runs on the page, outside the Pyodide worker. Termination
+    // remains effective even when CPU-bound Python blocks that worker's event
+    // loop and cannot observe its own timer or an AbortSignal.
+    this.#worker.terminate?.();
   }
 
   #settle(message) {
@@ -137,6 +169,7 @@ export class PyodideWorkerClient {
       this.#diagnostic("warn", "protocol", `Ignoring response for unknown request #${message.requestId}`);
       return;
     }
+    clearTimeout(pending.timer);
     this.#pending.delete(message.requestId);
     const elapsed = Math.round((performance.now?.() ?? Date.now()) - pending.startedAt);
     if (message.ok) {
@@ -161,6 +194,7 @@ export class PyodideWorkerClient {
       this.#readyState = "failed";
     }
     for (const pending of this.#pending.values()) {
+      clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.#pending.clear();

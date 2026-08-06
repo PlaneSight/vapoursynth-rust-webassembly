@@ -1,6 +1,8 @@
 import { loadVapourSynthPackageSource } from "./package.mjs";
-import { loadBrowserPyodide } from "./loader.mjs";
+import { loadBrowserPyodide, resolvePyodideIndexUrl } from "./loader.mjs";
 import { startPyodideWorkerRuntime } from "./worker.mjs";
+
+const pyodideIndexUrl = resolvePyodideIndexUrl(import.meta.url);
 
 function reportBootstrap(message, { level = "info", detail } = {}) {
   globalThis.postMessage({
@@ -16,10 +18,11 @@ function reportBootstrap(message, { level = "info", detail } = {}) {
 }
 
 reportBootstrap("Pyodide worker module started");
+reportBootstrap("Pyodide index URL resolved", { detail: pyodideIndexUrl });
 try {
   await startPyodideWorkerRuntime({
     scope: globalThis,
-    loadPyodide: loadBrowserPyodide,
+    loadPyodide: () => loadBrowserPyodide({ indexURL: pyodideIndexUrl }),
     createVapourSynthWorker: () => new Worker(new URL("../vapoursynth/bootstrap.mjs", import.meta.url), { type: "module" }),
     loadPackageSource: loadVapourSynthPackageSource,
     onDiagnostic: reportBootstrap,

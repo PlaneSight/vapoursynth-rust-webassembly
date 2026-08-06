@@ -1,13 +1,16 @@
 //! Raw imports for the browser bridge's stable C ABI.
 //!
 //! `VapourSynth` pointers remain entirely in the C++ bridge. This crate only
-//! describes fixed-width statuses, opaque-token scalars, and transient output
-//! spans used by the Emscripten-linked Rust ownership layer.
+//! describes fixed-width statuses, argument descriptors, opaque-token scalars,
+//! and transient output spans used by the Emscripten-linked Rust ownership
+//! layer.
 
 #![cfg_attr(not(test), no_std)]
 
 /// Raw declarations for the Emscripten browser bridge.
 pub mod browser {
+    use core::ffi::c_void;
+
     /// Fixed-width status value returned by the C++ bridge.
     pub type Status = i32;
 
@@ -50,6 +53,41 @@ pub mod browser {
     pub const STATUS_CORE_ALREADY_ACTIVE: Status = 16;
     /// Rust and C++ disagree about their handwritten opaque-token ABI.
     pub const STATUS_ABI_MISMATCH: Status = 17;
+    /// The requested plugin namespace or function is not registered.
+    pub const STATUS_UNKNOWN_FUNCTION: Status = 18;
+
+    /// Signed 64-bit integers: aligned `i64` values.
+    pub const ARGUMENT_INT: u32 = 1;
+    /// Double-precision floats: aligned `f64` values.
+    pub const ARGUMENT_FLOAT: u32 = 2;
+    /// Opaque binary bytes; `value_count` is the byte length.
+    pub const ARGUMENT_DATA: u32 = 3;
+    /// Node tokens: `(u32 slot, u32 generation)` pairs.
+    pub const ARGUMENT_NODE: u32 = 4;
+
+    /// One keyed argument descriptor for the generic invoke entry point.
+    ///
+    /// Mirrors `struct vs_browser_argument` in `native/browser_bridge.h`:
+    /// 20 bytes on wasm32 with 4-byte alignment and fields at offsets 0, 4,
+    /// 8, 12, and 16. `key` is a NUL-free byte span; for INT/FLOAT/NODE kinds
+    /// `value_count` counts elements (INT and FLOAT element storage is 8-byte
+    /// aligned, NODE storage is `(slot, generation)` pairs), and for DATA it
+    /// is the byte length. `value_count` is at least 1 and `values` is
+    /// non-null.
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct Argument {
+        /// Key bytes without a required NUL terminator.
+        pub key: *const u8,
+        /// Length of the key byte span.
+        pub key_length: u32,
+        /// One of the `ARGUMENT_*` kind constants.
+        pub kind: u32,
+        /// Element storage for `value_count` typed values.
+        pub values: *const c_void,
+        /// INT/FLOAT/NODE element count, or the byte length for DATA.
+        pub value_count: u32,
+    }
 
     #[cfg(target_os = "emscripten")]
     unsafe extern "C" {
@@ -62,20 +100,22 @@ pub mod browser {
         /// Releases an opaque core token.
         pub fn vs_browser_core_release(slot: u32, generation: u32) -> Status;
 
-        /// Creates an RGB24 `std.BlankClip` node from an opaque core token.
-        pub fn vs_browser_core_blank_clip(
+        /// Invokes one plugin function generically and writes its result node
+        /// token and caller error text.
+        pub fn vs_browser_core_invoke(
             core_slot: u32,
             core_generation: u32,
-            width: u32,
-            height: u32,
-            out_node_slot: *mut u32,
-            out_node_generation: *mut u32,
-        ) -> Status;
-
-        /// Creates an `std.Invert` node from an opaque node token.
-        pub fn vs_browser_node_invert(
-            node_slot: u32,
-            node_generation: u32,
+            namespace_name: *const u8,
+            namespace_length: u32,
+            function_name: *const u8,
+            function_length: u32,
+            arguments: *const Argument,
+            argument_count: u32,
+            result_key: *const u8,
+            result_key_length: u32,
+            result_index: u32,
+            error: *mut u8,
+            error_size: u32,
             out_node_slot: *mut u32,
             out_node_generation: *mut u32,
         ) -> Status;
@@ -134,6 +174,37 @@ mod tests {
             browser::STATUS_HANDLE_KIND_MISMATCH,
             browser::STATUS_HANDLE_TABLE_EXHAUSTED
         );
+        assert_ne!(
+            browser::STATUS_ABI_MISMATCH,
+            browser::STATUS_UNKNOWN_FUNCTION
+        );
         assert_eq!(browser::HANDLE_ABI_VERSION, 1);
+    }
+
+    #[test]
+    fn argument_kinds_are_stable_and_distinct() {
+        let kinds = [
+            browser::ARGUMENT_INT,
+            browser::ARGUMENT_FLOAT,
+            browser::ARGUMENT_DATA,
+            browser::ARGUMENT_NODE,
+        ];
+        for (index, kind) in kinds.iter().enumerate() {
+            assert!(!kinds[..index].contains(kind));
+        }
+        assert_eq!(kinds[0], 1);
+        assert_eq!(kinds[3], 4);
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    fn argument_descriptor_layout_matches_the_c_abi() {
+        assert_eq!(core::mem::size_of::<browser::Argument>(), 20);
+        assert_eq!(core::mem::align_of::<browser::Argument>(), 4);
+        assert_eq!(core::mem::offset_of!(browser::Argument, key), 0);
+        assert_eq!(core::mem::offset_of!(browser::Argument, key_length), 4);
+        assert_eq!(core::mem::offset_of!(browser::Argument, kind), 8);
+        assert_eq!(core::mem::offset_of!(browser::Argument, values), 12);
+        assert_eq!(core::mem::offset_of!(browser::Argument, value_count), 16);
     }
 }

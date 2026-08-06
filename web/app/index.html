@@ -728,6 +728,24 @@
       .diagnostic-warn { color: #e9c46a; }
       .diagnostic-info { color: var(--text-2); }
 
+      .limitations-body {
+        padding: 0.75rem 1rem 0.9rem;
+        color: var(--text-2);
+        font-size: 0.72rem;
+        line-height: 1.65;
+      }
+      .limitations-body p { margin: 0 0 0.55rem; }
+      .limitations-body p:first-child { margin-top: 0; }
+      .limitations-body p:last-child { margin-bottom: 0.55rem; }
+      .limitations-body ul { margin: 0 0 0.7rem; padding-left: 1.1rem; }
+      .limitations-body li { margin: 0.15rem 0; }
+      .limitations-body code {
+        color: var(--amber);
+        font-size: 0.7rem;
+        overflow-wrap: anywhere;
+      }
+      .limitations-body strong { color: var(--text); font-weight: 600; }
+
       .note {
         margin: 1rem 0 0;
         color: var(--text-3);
@@ -837,7 +855,7 @@
           <div class="bus-row">
             <button class="bus-node" type="button" data-graph-node="source" aria-pressed="true">
               <span class="bus-node-name"><span class="bus-lamp" aria-hidden="true"></span>Source</span>
-              <span class="bus-node-code">std.BlankClip(width=320, height=180, format=vs.RGB24)</span>
+              <span class="bus-node-code">std.BlankClip(width=320, height=180, format=vs.RGB24, color=[32, 96, 224])</span>
             </button>
             <span class="bus-link" aria-hidden="true"><span class="bus-link-line"></span><span class="bus-link-head"></span></span>
             <button class="bus-node" type="button" data-graph-node="effect" aria-pressed="false">
@@ -847,7 +865,7 @@
             <span class="bus-link" aria-hidden="true"><span class="bus-link-line"></span><span class="bus-link-head"></span></span>
             <button class="bus-node" type="button" data-graph-node="output" aria-pressed="false">
               <span class="bus-node-name"><span class="bus-lamp" aria-hidden="true"></span>Program output</span>
-              <span class="bus-node-code">await vs.set_output(0, inverted)</span>
+              <span class="bus-node-code">clip.set_output()</span>
             </button>
           </div>
         </section>
@@ -886,14 +904,14 @@
             <div class="param-block" data-param-for="output" hidden>
               <dl class="node-info">
                 <dt>Register</dt>
-                <dd>await vs.set_output(0, inverted)</dd>
+                <dd>clip.set_output()</dd>
                 <dt>Output</dt>
                 <dd>0 — RGBA8 frame rendered in the worker.</dd>
                 <dt>Dimensions</dt>
                 <dd>Follow the source clip.</dd>
               </dl>
             </div>
-            <p class="graph-summary" data-graph-summary>std.BlankClip(width=320, height=180, format=vs.RGB24) → std.Invert() → set_output(0, inverted)</p>
+            <p class="graph-summary" data-graph-summary>std.BlankClip(width=320, height=180, format=vs.RGB24, color=[32, 96, 224]) → std.Invert() → clip.set_output()</p>
           </div>
         </section>
 
@@ -909,9 +927,9 @@
             <span class="sr-only">Authoring script (.vpy)</span>
             <textarea spellcheck="false" aria-label="Authoring script (.vpy)">import vapoursynth as vs
 
-blank = await vs.core.std.BlankClip(width=320, height=180, format=vs.RGB24)
-inverted = await vs.core.std.Invert(blank)
-await vs.set_output(0, inverted)</textarea>
+clip = vs.core.std.BlankClip(width=320, height=180, format=vs.RGB24, color=[32.0, 96.0, 224.0])
+clip = vs.core.std.Invert(clip)
+clip.set_output()</textarea>
           </label>
           <footer class="action-bar">
             <button class="run-button" type="button" disabled aria-keyshortcuts="Control+Enter Meta+Enter">
@@ -925,6 +943,24 @@ await vs.set_output(0, inverted)</textarea>
           <summary>Runtime diagnostics</summary>
           <div class="diagnostics-toolbar"><button class="diagnostics-clear" type="button">Clear log</button></div>
           <pre class="diagnostics-log" aria-live="polite"></pre>
+        </details>
+
+        <details class="diagnostics limitations" aria-label="Runtime limitations">
+          <summary>Runtime limitations</summary>
+          <div class="limitations-body">
+            <p><strong>Authoring capabilities:</strong> <code data-authoring-caps>waiting for the runtime…</code></p>
+            <ul>
+              <li>Graph plans: 64 operations, 64 arguments each, 4096 array values, 16 outputs (worker boundary: 256 operations, 64 outputs).</li>
+              <li>One active graph at a time; frames render as RGBA8 only (RGB24 source format).</li>
+              <li>Scripts run synchronously in the Pyodide worker; plan execution is single-threaded.</li>
+            </ul>
+            <p><strong>Deliberately unsupported</strong> (stable errors, never emulated):</p>
+            <ul>
+              <li>Native plugin binaries, dynamic plugin discovery, and non-<code>std</code> namespaces.</li>
+              <li><code>std.Resize</code> (zimg), non-RGB24 pixel formats, video decoding/encoding, WebCodecs.</li>
+              <li>Threaded scheduling, frame properties, and other desktop-only API surfaces.</li>
+            </ul>
+          </div>
         </details>
       </section>
 

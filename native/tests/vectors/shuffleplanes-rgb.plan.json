@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "id": 1,
+      "namespace": "std",
+      "function": "BlankClip",
+      "arguments": [
+        {
+          "key": "width",
+          "kind": "int",
+          "value": 320
+        },
+        {
+          "key": "height",
+          "kind": "int",
+          "value": 180
+        },
+        {
+          "key": "format",
+          "kind": "int",
+          "value": 537395200
+        },
+        {
+          "key": "length",
+          "kind": "int",
+          "value": 1
+        },
+        {
+          "key": "color",
+          "kind": "floatArray",
+          "value": [
+            32.0,
+            96.0,
+            224.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "namespace": "std",
+      "function": "ShufflePlanes",
+      "arguments": [
+        {
+          "key": "clips",
+          "kind": "nodeArray",
+          "value": [
+            1
+          ]
+        },
+        {
+          "key": "planes",
+          "kind": "intArray",
+          "value": [
+            0,
+            1,
+            2
+          ]
+        },
+        {
+          "key": "colorfamily",
+          "kind": "int",
+          "value": 2
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "index": 0,
+      "node": 2,
+      "expected": "shuffleplanes-rgb.rgba.bin"
+    }
+  ]
+}

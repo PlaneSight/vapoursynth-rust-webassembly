@@ -1,12 +1,12 @@
 # VapourSynth WebAssembly
 
-This project compiles the real upstream VapourSynth core to WebAssembly with Emscripten and runs it inside a dedicated browser worker, wrapped in a safe `no_std` Rust ownership layer (`Core` / `Node` / `Frame` handle tokens) behind a narrow C++ opaque-handle bridge. Python scripts are authored in a separate Pyodide worker that drives the VapourSynth worker over an asynchronous protocol, so no raw upstream pointers ever cross a Rust, worker, or JavaScript boundary.
+This project compiles the real upstream VapourSynth core to WebAssembly with Emscripten and runs it inside a dedicated browser worker, with a safe `no_std` Rust token-validation and invocation layer behind a narrow C++ opaque-handle bridge. Python scripts are authored in a separate Pyodide worker: the synchronous `vapoursynth` package records a graph plan, which the VapourSynth worker then executes with one generic typed invocation per operation, so no raw upstream pointers ever cross a Rust, worker, or JavaScript boundary.
 
 ## Status
 
-- The `browser-integration` CI job builds the pinned upstream core with the Rust layer and Emscripten module, then runs the native, Rust, protocol, and integration suites.
-- The canvas app renders a real `BlankClip → Invert` filter result end to end; `native/tests/render_invert.cpp` verifies every output pixel.
-- Python scripting runs in a Pyodide worker and drives the VapourSynth worker asynchronously.
+- The `browser-integration` CI job builds the pinned upstream core with the Rust layer and Emscripten module, then runs the native, Rust, protocol, integration, and browser suites.
+- A 17-filter common stdlib corpus executes end to end in the browser (Pyodide → RPC → Emscripten VapourSynth → canvas) with byte-exact pixels; every vector is also proven byte-exact by the native `render_plan` harness.
+- Python authoring runs synchronously in a Pyodide worker and drains a graph plan that the VapourSynth worker executes generically.
 - Unsupported APIs fail with explicit errors rather than silently emulating desktop behaviour.
 
 ## Demo
@@ -18,7 +18,16 @@ uv sync --locked
 npm run serve
 ```
 
-Open `http://localhost:4173/web/app/index.html` (HTTP is required for ES modules and nested workers). The build applies the pinned upstream patch, compiles the Emscripten module, and runs the render-invert tests; generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
+Open `http://localhost:4173/` — the root redirects to `/app/` (HTTP is required for ES modules and nested workers). `npm run serve` serves the production distribution with `uv run --locked python -m http.server 4173 --directory build/web`. The build applies the pinned upstream patch, compiles the Emscripten module, and runs the native suites (including the byte-exact corpus harness); generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
+
+## Browser tests
+
+```bash
+npm run test:browser        # requires build/web (already built)
+npm run test:browser:build  # ./tools/build-browser.sh, then the tests
+```
+
+`npm run test:browser` runs the Playwright spec in `web/tests/browser/` in headless Chromium against the production bundle in `build/web`, served from `build/web` at port 4173. GitHub Pages deploys `build/web` as the site root, so the deployed demo at `/` (redirecting to `/app/`) is the same distribution the tests exercise.
 
 ## Architecture
 
@@ -27,24 +36,23 @@ flowchart LR
     App["web/app — main thread"] -->|protocol| W["web/runtime — VapourSynth worker"]
     P["web/python — Pyodide worker"] -->|protocol| W
     W --> E["web/runtime/emscripten — session adapter"]
-    E --> R["crates/vapoursynth-core — Rust Core / Node / Frame"]
+    E --> R["crates/vapoursynth-core — typed invocation + opaque tokens"]
     R --> C["native/ — C++ opaque-handle bridge"]
     C --> VS["upstream VapourSynth"]
 ```
 
-Rust owns only thread-affine handle tokens; the C++ bridge retains the `VSAPI` table and every upstream pointer. The runtime is split across `web/app`, `web/runtime`, `web/protocol`, `web/python`, and `web/tests`. See [docs/architecture.md](docs/architecture.md) for the full design.
+Rust handles only typed copies of thread-affine tokens; the C++ bridge owns the token table, the `VSAPI` table, every upstream pointer, and every paired release. The runtime is split across `web/app`, `web/runtime`, `web/protocol`, `web/python`, and `web/tests`. See [docs/architecture.md](docs/architecture.md) for the full design.
 
 ## Supported API
 
 | Supported | Not yet |
 | --- | --- |
 | `vs.RGB24` | Other pixel formats |
-| `vs.core.std.BlankClip` | Other namespaces and functions |
-| `vs.core.std.Invert` | `std.Resize` (zimg) |
-| `VideoNode` | Plugin discovery and native plugins |
-| `vs.set_output()` | Video decoding/encoding, threaded scheduling |
+| 17 common `vs.core.std.*` filters (see `docs/support.md`) | Other namespaces and functions |
+| `VideoNode`, `vs.set_output()` | Plugin discovery and native plugins |
+| Graph plans (64 ops / 16 outputs) | Video decoding/encoding, threaded scheduling |
 
-Python calls are asynchronous because every graph request crosses from the Pyodide worker to the VapourSynth worker. Anything outside the supported subset raises an explicit unsupported error.
+`std.Resize` (zimg) and other formats are deliberately deferred. Python authoring is synchronous: each call records one typed operation in the plan, which the VapourSynth worker executes generically. Anything outside the supported subset raises an explicit unsupported error.
 
 ## Development
 

@@ -92,6 +92,14 @@ async function refreshStatus() {
   diagnostics.info("capabilities", JSON.stringify(capabilities));
   runtimeReady = capabilities.upstreamLinked;
 
+  const capsTarget = document.querySelector("[data-authoring-caps]");
+  if (capsTarget) {
+    const authoring = capabilities.authoring;
+    capsTarget.textContent = authoring?.available
+      ? `plan version ${authoring.planVersion} · source format ${authoring.format}`
+      : "authoring unavailable";
+  }
+
   if (runtimeReady) {
     setStatus("Runtime ready · output 0 is available", "ready");
     setOutputState("ready", "ready");
@@ -121,7 +129,7 @@ async function renderScript() {
     diagnostics.info("render", `Script registered ${outputs.length} output(s)`);
     const output = outputs.find(({ index }) => index === 0);
     if (!output) {
-      throw new Error("the script did not register output 0 with await vs.set_output(0, node)");
+      throw new Error("the script did not register output 0 with clip.set_output()");
     }
 
     const frame = await client.renderOutput(output.index);
@@ -178,7 +186,7 @@ const heightValue = document.querySelector('[data-graph-value="height"]');
 const NODE_INFO = {
   source: {
     title: "Source · BlankClip",
-    summary: (dims) => `BlankClip ${dims.width}×${dims.height} RGB24 — frame generator feeding the effect bus.`,
+    summary: (dims) => `BlankClip ${dims.width}×${dims.height} RGB24, color [32, 96, 224] — frame generator feeding the effect bus.`,
   },
   effect: {
     title: "Effect · Invert",
@@ -186,15 +194,15 @@ const NODE_INFO = {
   },
   output: {
     title: "Program output · Output 0",
-    summary: "Output 0 — RGB24, registered via await vs.set_output(0, node), routed to the program monitor.",
+    summary: "Output 0 — RGB24, registered via clip.set_output(), routed to the program monitor.",
   },
 };
 
 const DEFAULT_SCRIPT = `import vapoursynth as vs
 
-blank = await vs.core.std.BlankClip(width=320, height=180, format=vs.RGB24)
-inverted = await vs.core.std.Invert(blank)
-await vs.set_output(0, inverted)`;
+clip = vs.core.std.BlankClip(width=320, height=180, format=vs.RGB24, color=[32.0, 96.0, 224.0])
+clip = vs.core.std.Invert(clip)
+clip.set_output()`;
 
 function controlFor(name) {
   return name === "width" ? widthControl : heightControl;
@@ -227,9 +235,9 @@ const dims = {
 function generateSource() {
   return `import vapoursynth as vs
 
-blank = await vs.core.std.BlankClip(width=${dims.width}, height=${dims.height}, format=vs.RGB24)
-inverted = await vs.core.std.Invert(blank)
-await vs.set_output(0, inverted)`;
+clip = vs.core.std.BlankClip(width=${dims.width}, height=${dims.height}, format=vs.RGB24, color=[32.0, 96.0, 224.0])
+clip = vs.core.std.Invert(clip)
+clip.set_output()`;
 }
 
 let graphState = "idle";

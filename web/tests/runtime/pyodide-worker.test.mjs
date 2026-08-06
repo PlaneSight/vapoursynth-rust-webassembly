@@ -72,6 +72,20 @@ test("returns structured errors from the Python worker runtime", async () => {
   client.close();
 });
 
+test("enforces script source and filename limits at the worker protocol boundary", async () => {
+  const client = new PyodideWorkerClient(linkedWorker());
+
+  await assert.rejects(
+    () => client.runScript("x".repeat(1_000_001)),
+    (error) => error.code === "invalid-script",
+  );
+  await assert.rejects(
+    () => client.runScript("x = 1", "x".repeat(257)),
+    (error) => error.code === "invalid-script",
+  );
+  client.close();
+});
+
 test("releases the Pyodide session and worker scope on shutdown", () => {
   let freed = false;
   let closed = false;
@@ -196,4 +210,31 @@ test("holds Python requests until the outer worker readiness handshake", async (
 
   assert.equal((await status).upstreamLinked, true);
   client.close();
+});
+
+test("terminates a CPU-bound Pyodide worker from the parent-side script deadline", async () => {
+  const posted = [];
+  let terminations = 0;
+  const worker = {
+    postMessage(message) {
+      posted.push(message);
+    },
+    terminate() {
+      terminations += 1;
+    },
+  };
+  const client = new PyodideWorkerClient(worker, { scriptTimeoutMs: 20 });
+  worker.onmessage({ data: { schemaVersion: 1, type: "ready" } });
+
+  await assert.rejects(
+    () => client.runScript("while True:\n    pass"),
+    (error) => error.code === "script-timeout" && error.message.includes("20 ms"),
+  );
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].type, "runScript");
+  assert.equal(terminations, 1);
+  await assert.rejects(
+    () => client.status(),
+    (error) => error.code === "script-timeout",
+  );
 });

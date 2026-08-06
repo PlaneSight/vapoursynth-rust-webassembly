@@ -6,9 +6,12 @@
     "test": "node --test web/tests/**/*.test.mjs",
     "test:unit": "node --test web/tests/runtime/*.test.mjs web/tests/protocol/*.test.mjs",
     "test:integration": "node --test web/tests/integration/*.test.mjs",
-    "serve": "uv run --locked python -m http.server 4173"
+    "test:browser": "playwright test",
+    "test:browser:build": "./tools/build-browser.sh && playwright test",
+    "serve": "uv run --locked python -m http.server 4173 --directory build/web"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "pyodide": "0.29.4"
   }
 }

@@ -39,9 +39,38 @@ enum {
     VS_BROWSER_STATUS_HANDLE_TABLE_EXHAUSTED = 15,
     VS_BROWSER_STATUS_CORE_ALREADY_ACTIVE = 16,
     VS_BROWSER_STATUS_ABI_MISMATCH = 17,
+    VS_BROWSER_STATUS_UNKNOWN_FUNCTION = 18,
 };
 
 #define VS_BROWSER_HANDLE_ABI_VERSION UINT32_C(1)
+
+/// Value kinds accepted by [`struct vs_browser_argument`].
+enum {
+    /// Signed 64-bit integers: aligned `int64_t` values.
+    VS_BROWSER_ARGUMENT_INT = 1,
+    /// Double-precision floats: aligned `double` values.
+    VS_BROWSER_ARGUMENT_FLOAT = 2,
+    /// Opaque binary bytes; `value_count` is the byte length.
+    VS_BROWSER_ARGUMENT_DATA = 3,
+    /// Node tokens: `(uint32_t slot, uint32_t generation)` pairs.
+    VS_BROWSER_ARGUMENT_NODE = 4,
+};
+
+/// One keyed argument descriptor for [`vs_browser_core_invoke`].
+///
+/// The struct is 20 bytes on wasm32 with 4-byte alignment; fields sit at
+/// offsets 0, 4, 8, 12, and 16. `key` is a byte span that does not need a NUL
+/// terminator and must not contain one. For INT/FLOAT/NODE kinds `value_count`
+/// counts elements (INT and FLOAT element storage is 8-byte aligned; NODE
+/// storage is `(slot, generation)` pairs); for DATA it is the byte length.
+/// `value_count` must be at least 1 and `values` must be non-null.
+typedef struct vs_browser_argument {
+    const uint8_t *key;
+    uint32_t key_length;
+    uint32_t kind;
+    const void *values;
+    uint32_t value_count;
+} vs_browser_argument;
 
 /// Returns the version of the scalar opaque-handle ABI.
 VS_BROWSER_EXPORT uint32_t vs_browser_handle_abi_version(void) VS_BROWSER_NOEXCEPT;
@@ -59,19 +88,37 @@ VS_BROWSER_EXPORT vs_browser_status vs_browser_core_release(
     uint32_t slot,
     uint32_t generation) VS_BROWSER_NOEXCEPT;
 
-/// Creates an RGB24 `std.BlankClip` node owned by the supplied core token.
-VS_BROWSER_EXPORT vs_browser_status vs_browser_core_blank_clip(
+/// Invokes one plugin function generically and returns its result node token.
+///
+/// `namespace_name` and `function_name` are NUL-free byte spans naming the
+/// plugin namespace and function. `arguments` holds `argument_count`
+/// descriptors (may be null only when the count is zero). `result_key` names
+/// the map key holding the result node and `result_index` selects one of its
+/// values. Node descriptors resolve through the handle table: stale tokens
+/// yield [`VS_BROWSER_STATUS_INVALID_HANDLE`] and non-node tokens yield
+/// [`VS_BROWSER_STATUS_HANDLE_KIND_MISMATCH`]. Unknown namespaces or functions
+/// yield [`VS_BROWSER_STATUS_UNKNOWN_FUNCTION`]; a missing result key or index
+/// yields [`VS_BROWSER_STATUS_NODE_UNAVAILABLE`].
+///
+/// On upstream invocation failure the plugin's error text is copied into
+/// `error` as a NUL-terminated, size-truncated string; on every other outcome
+/// the first byte is NUL'd when the buffer is present. `error` may be null
+/// only when `error_size` is zero. Both output fields are set to zero before
+/// work begins and are non-zero only on [`VS_BROWSER_STATUS_OK`].
+VS_BROWSER_EXPORT vs_browser_status vs_browser_core_invoke(
     uint32_t core_slot,
     uint32_t core_generation,
-    uint32_t width,
-    uint32_t height,
-    uint32_t *out_node_slot,
-    uint32_t *out_node_generation) VS_BROWSER_NOEXCEPT;
-
-/// Creates a `std.Invert` node from a retained node token.
-VS_BROWSER_EXPORT vs_browser_status vs_browser_node_invert(
-    uint32_t node_slot,
-    uint32_t node_generation,
+    const uint8_t *namespace_name,
+    uint32_t namespace_length,
+    const uint8_t *function_name,
+    uint32_t function_length,
+    const vs_browser_argument *arguments,
+    uint32_t argument_count,
+    const uint8_t *result_key,
+    uint32_t result_key_length,
+    uint32_t result_index,
+    char *error,
+    uint32_t error_size,
     uint32_t *out_node_slot,
     uint32_t *out_node_generation) VS_BROWSER_NOEXCEPT;
 
@@ -115,14 +162,6 @@ VS_BROWSER_EXPORT vs_browser_status vs_browser_frame_copy_rgba8(
 VS_BROWSER_EXPORT vs_browser_status vs_browser_frame_release(
     uint32_t slot,
     uint32_t generation) VS_BROWSER_NOEXCEPT;
-
-/// Renders an inverted black RGB24 VapourSynth frame into caller-owned RGBA8 storage.
-/// Frames whose RGBA8 output exceeds the 16 MiB browser render budget are rejected.
-VS_BROWSER_EXPORT vs_browser_status vs_browser_render_inverted_blank(
-    uint32_t width,
-    uint32_t height,
-    uint8_t *rgba,
-    uint32_t rgba_size) VS_BROWSER_NOEXCEPT;
 
 #ifdef __cplusplus
 }

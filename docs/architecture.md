@@ -2,7 +2,7 @@
 
 ## Objective
 
-Run the upstream VapourSynth core in a browser worker while retaining genuine node, frame, plugin invocation, and scheduling semantics wherever the browser permits them. Rust is the ownership layer of the browser build; it does not replace upstream VapourSynth in the compatibility backend.
+Run the upstream VapourSynth core in a browser worker while retaining genuine node, frame, plugin invocation, and scheduling semantics wherever the browser permits them. C++ owns upstream resources; Rust validates opaque tokens and typed invocations without replacing upstream VapourSynth.
 
 ## Build boundaries
 
@@ -16,13 +16,13 @@ native/browser_bridge.cpp
 statically linked upstream core + selected std plugin code
 ```
 
-Only the bridge owns raw VapourSynth pointers. RAII wrappers release maps, nodes, frames, and the core in dependency order; the C ABI accepts scalar dimensions and a caller-owned byte span, never a C++ or VapourSynth pointer.
+Only the bridge owns raw VapourSynth pointers. Its C++ leases release maps, nodes, frames, and the core in dependency order; the C ABI accepts fixed-width scalars and caller-owned byte spans, never a C++ or VapourSynth pointer.
 
-The linked Rust artifact uses a separate opaque-handle ownership boundary:
+The linked Rust artifact uses the same opaque-handle boundary:
 
 ```text
-native/tests/render_invert.cpp
-  ↕ safe no_std Core / Node / Frame API
+native/tests/render_invert_rust.cpp
+  ↕ no_std typed invocation and token API
 crates/vapoursynth-core
   ↕ fixed-width slot + generation C ABI
 native/browser_bridge.cpp
@@ -30,9 +30,9 @@ native/browser_bridge.cpp
 statically linked upstream core + selected std plugin code
 ```
 
-The C++ bridge owns a generation-checked token table, the versioned `VSAPI` table, and all `VSCore`, `VSNode`, and `VSFrame` references. Rust owns non-`Send`, non-`Sync` typed tokens whose `Drop` calls the paired C++ release function. A node or frame lease retains the C++ core state, so an out-of-order raw C ABI release cannot call `freeCore` before upstream permits it.
+The C++ bridge owns a generation-checked token table, the versioned `VSAPI` table, and all `VSCore`, `VSNode`, and `VSFrame` references. Rust carries copyable, non-zero slot/generation token values and validates every descriptor before forwarding a synchronous call. Node and frame leases in C++ retain the core state, so an out-of-order ABI release cannot call `freeCore` before upstream permits it.
 
-The ownership layer uses a handwritten C ABI and `#[cfg(target_os = "emscripten")]`; it is not a `wasm-bindgen` boundary.
+The validation layer uses a handwritten C ABI and `#[cfg(target_os = "emscripten")]`; it is not a `wasm-bindgen` boundary.
 
 ## Process model
 
@@ -42,7 +42,7 @@ Owns UI state, editor state, canvas presentation, and request coordination. It n
 
 ### Python worker
 
-Hosts the pinned Pyodide runtime and the deliberately supported asynchronous `vapoursynth` API subset. It creates a nested VapourSynth worker and communicates with it through the same correlated request protocol used by the main thread. Python values carry opaque worker handles, not frame buffers or native pointers. Each `.vpy` evaluation receives a fresh Python globals dictionary and a fresh graph state; selected outputs retain their graph until the next script or worker shutdown.
+Hosts the pinned Pyodide runtime and the deliberately supported synchronous `vapoursynth` API subset. It creates a nested VapourSynth worker and communicates with it through the same correlated request protocol used by the main thread: Python calls record typed operations into a graph plan, the plan drains as JSON, and the VapourSynth worker executes it with one generic invocation per operation. Python values carry plan-local operation references, never frame buffers or native pointers. Each `.vpy` evaluation receives a fresh Python globals dictionary and a fresh graph state; selected outputs retain their graph until the next script or worker shutdown.
 
 ### VapourSynth worker
 
@@ -66,14 +66,14 @@ Frame transport hands an RGBA8 `ArrayBuffer` to the caller on the `postMessage` 
 
 ## Boundary rules
 
-- The ownership ABI exposes only fixed-width scalars, paired slot/generation values, and a transient caller-owned byte span.
+- The opaque-token ABI exposes only fixed-width scalars, paired slot/generation values, and transient caller-owned byte spans.
 - `vapoursynth-sys` declares only the C++ bridge ABI; raw VapourSynth layouts remain private to C++.
-- Safe Rust wrappers own every bridge-token release and convert upstream statuses immediately.
+- Safe Rust code validates bridge tokens and invocation descriptors and converts upstream statuses immediately; C++ owns every resource release.
 - JavaScript sees integers, structured errors, and transferable buffers—not pointers.
 - Token slots are generation-checked before reuse and retired permanently if their generation would wrap.
 - Worker shutdown releases retained resources deterministically.
 - Python finalizers may request release, but correctness cannot depend on prompt garbage collection.
-- The Python module exposes only `RGB24`, `core.std.BlankClip`, `core.std.Invert`, `VideoNode`, and `set_output()`; any other API path fails explicitly. All calls are awaitable because they cross the worker boundary.
+- The Python module exposes `RGB24`, `VideoNode`, `set_output()`, and generic `core.std` graph recording for the supported argument kinds. Authoring calls are synchronous; only the drained graph crosses the worker protocol. Unsupported API paths fail explicitly.
 
 ## Plugin model
 

@@ -32,9 +32,20 @@ Activate Emscripten 3.1.68 in the current shell, then run:
 npm run serve
 ```
 
-Open `http://localhost:4173/web/app/index.html`. The build applies the locked upstream patch only while compiling, restores the submodule before exit, runs the native render-invert and ES-module tests, and stages the deployable site in `build/web/`.
+Open `http://localhost:4173/` — the root redirects to `/app/` (HTTP is required for ES modules and nested workers). `npm run serve` runs `uv run --locked python -m http.server 4173 --directory build/web`. The build applies the locked upstream patch only while compiling, restores the submodule before exit, runs the native render-invert and ES-module tests, and stages the deployable site in `build/web/`.
 
 Generated files belong only in `build/`: `build/emscripten/` holds Meson/Emscripten output, `build/web/` holds the browser distribution, and `build/test/` is reserved for test output. Do not hand-edit generated files.
+
+## Browser tests
+
+Run the production-browser Playwright round trip (spec: `web/tests/browser/app.spec.mjs`) against the distribution in `build/web`:
+
+```bash
+npm run test:browser        # requires an existing build/web
+npm run test:browser:build  # ./tools/build-browser.sh, then the tests
+```
+
+`npm run test:browser` invokes `playwright test`; the Playwright config starts its own server (`python3 -m http.server 4173 --directory build/web`), runs headless Chromium, and writes the HTML report to `build/test/playwright-report/`. GitHub Pages deploys `build/web` as the site root (see `.github/workflows/static.yml`), so `/` and `/app/` on the deployed site match this local distribution server.
 
 ## Isolated Docker builds
 

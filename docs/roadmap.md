@@ -1,30 +1,28 @@
 # Roadmap
 
-The foundational work — upstream core build, safe Rust ownership layer, and browser worker — is complete and exercised by the `browser-integration` CI job. The remaining work, in suggested order:
+The foundational work — upstream core build, safe Rust ownership layer, browser worker, generic typed invocation, and the common-filter corpus — is complete and exercised by the `browser-integration` CI job. The remaining work, in suggested order:
 
-## 1. Generic invocation
+## 1. Generic invocation — done
 
-Implement typed argument maps and plugin/function lookup sufficient for `std.BlankClip`, `std.Invert`, and one resize operation.
+Typed argument descriptors, plugin/function lookup, and graph plans are implemented: any registered `std` function can be invoked generically through `vs_browser_core_invoke`, and the 17-filter corpus in `docs/support.md` proves byte-exact RGB24 output through the full browser path. Use the public domain model of `vapoursynth4-rs` and `rust-av/vapoursynth-rs` as comparative prior art for owned and borrowed resources, maps, plugins, functions, nodes, frames, formats, and VSScript behavior. Do not inherit their native-linking assumptions: browser Rust retains opaque tokens only, while C++ owns all upstream pointers and the `VSAPI` table.
 
-Use the public domain model of `vapoursynth4-rs` and `rust-av/vapoursynth-rs` as comparative prior art for owned and borrowed resources, maps, plugins, functions, nodes, frames, formats, and VSScript behavior. Do not inherit their native-linking assumptions: browser Rust retains opaque tokens only, while C++ owns all upstream pointers and the `VSAPI` table.
+## 2. Native-VS conformance harness
 
-## 2. Native conformance harness
+The current `render_plan` corpus is byte-exact against goldens hand-derived from upstream source semantics. A true differential harness would compare output and failure behaviour against a pinned native VapourSynth build, generating the goldens instead of deriving them; that is the basis for every future `Conformant` claim.
 
-Add differential conformance tests against pinned native VapourSynth outputs. The harness compares output and failure behaviour against a pinned native VapourSynth build and is the basis for every future `Conformant` claim.
+## 3. Complete browser Python path — done
 
-## 3. Complete browser Python path
+The synchronous Python package, two-worker protocol, real-Pyodide integration test, and the Playwright corpus prove the authoring boundary end to end in the production bundle: Pyodide records a graph plan, the VapourSynth worker executes it with one generic invocation per operation, and frames render byte-exact to the canvas.
 
-The checked-in Python package, two-worker protocol, and real-Pyodide integration test prove the authoring boundary; a full browser/Emscripten end-to-end run remains before the path is verified.
-
-The package exposes `vs.core`, `VideoNode`, format constants, function namespaces, and `set_output()` through asynchronous RPC. Unsupported APIs fail immediately with specific errors.
+The package exposes `vs.core`, `VideoNode`, format constants, function namespaces, and `set_output()`; unsupported APIs fail immediately with specific errors.
 
 ## 4. Multi-frame / WebCodecs
 
-Add WebCodecs input/output adapters, timeline metadata, multiple frames, and transferable-buffer transport.
+Add WebCodecs input/output adapters, timeline metadata, multiple frames, and transferable-buffer transport. The generation-checked multi-frame render path already exists (`render_output(index, frame)`).
 
-## 5. Cancellation and resource limits
+## 5. Cancellation and resource limits — done
 
-Add cancellation of in-flight work and explicit limits on resource use (sessions, outstanding requests, memory) so a misbehaving script cannot exhaust the worker.
+Cancellation and explicit limits are implemented and tested: worker-side 256 ops / 64 outputs, authoring-side 64 ops / 64 args / 4096 array values / 16 outputs / 64 KiB plan data, `script-timeout` / `plan-limit` error codes, and full lease release on reset, failure, and shutdown.
 
 ## 6. Optional threaded runtime
 

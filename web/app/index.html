@@ -3,968 +3,221 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#0d0e10">
-    <title>VapourSynth WebAssembly · Broadcast Mixer</title>
+    <meta name="theme-color" content="#063b7a">
+    <title>VapourSynth WebAssembly · Blueprint Graph</title>
     <style>
       :root {
         color-scheme: dark;
-        --bg: #0d0e10;
-        --body-top: #101114;
-        --body-bloom: rgba(255, 255, 255, 0.045);
-        --surface-0: #131418;
-        --surface-1: #17181d;
-        --surface-2: #1d1f25;
-        --field: #0e0f12;
-        --line: rgba(255, 255, 255, 0.075);
-        --line-strong: rgba(255, 255, 255, 0.14);
-        --text: #e8e6e2;
-        --text-2: #a3a8b0;
-        --text-3: #838a94;
-        --amber: #eaa33c;
-        --amber-bright: #f6ba58;
-        --amber-ink: #201505;
-        --amber-dim: rgba(234, 163, 60, 0.16);
-        --error: #f07c72;
-        --error-dim: rgba(240, 124, 114, 0.15);
-        --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        --blue-950: #031e47;
+        --blue-900: #052c63;
+        --blue-800: #063c7b;
+        --blue-700: #0756a6;
+        --blue-600: #0871bd;
+        --paper: #effbff;
+        --paper-muted: #b8e4f4;
+        --cyan: #73e6ff;
+        --cyan-dim: rgba(115, 230, 255, .23);
+        --line: rgba(207, 245, 255, .32);
+        --line-subtle: rgba(207, 245, 255, .16);
+        --signal: #ff744c;
+        --signal-dim: rgba(255, 116, 76, .2);
+        --success: #8bffd1;
+        --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
         font-family: var(--mono);
-        background: var(--bg);
-        color: var(--text);
-      }
-
-      :root[data-theme="light"] {
-        color-scheme: light;
-        --bg: #f2efe8;
-        --body-top: #fbf8f2;
-        --body-bloom: rgba(255, 255, 255, 0.48);
-        --surface-0: #fcfaf5;
-        --surface-1: #f1ede4;
-        --surface-2: #e7e1d5;
-        --field: #f6f2ea;
-        --line: rgba(50, 42, 31, 0.14);
-        --line-strong: rgba(50, 42, 31, 0.26);
-        --text: #29231b;
-        --text-2: #5e5549;
-        --text-3: #756b5e;
-        --amber: #965b08;
-        --amber-bright: #b5700b;
-        --amber-ink: #1f1405;
-        --amber-dim: rgba(150, 91, 8, 0.18);
-        --error: #ad3a34;
-        --error-dim: rgba(173, 58, 52, 0.15);
+        background: var(--blue-950);
+        color: var(--paper);
       }
 
       * { box-sizing: border-box; }
-
-      body {
-        min-width: 0;
-        min-height: 100vh;
-        margin: 0;
-        background:
-          radial-gradient(64rem 36rem at 50% -14rem, var(--body-bloom), transparent 62%),
-          linear-gradient(180deg, var(--body-top) 0%, var(--bg) 26rem);
-      }
-
-      button, textarea, input { font: inherit; }
-
-      ::selection { background: var(--amber-dim); }
-
-      :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-
-      .sr-only {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-      }
-
+      body { min-width: 20rem; min-height: 100vh; margin: 0; background: var(--blue-950); }
+      button, input, textarea { font: inherit; }
+      button { color: inherit; }
+      ::selection { color: var(--blue-950); background: var(--cyan); }
+      :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
       [hidden] { display: none !important; }
 
-      .skip-link {
-        position: absolute;
-        top: 0.75rem;
-        left: 0.75rem;
-        z-index: 50;
-        transform: translateY(-220%);
-        border-radius: 0.3rem;
-        padding: 0.5rem 0.75rem;
-        background: var(--amber);
-        color: var(--amber-ink);
-        font-size: 0.72rem;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-decoration: none;
-      }
-      .skip-link:focus-visible { transform: none; outline: 2px solid var(--amber-bright); outline-offset: 2px; }
-
-      .app-shell {
-        width: min(92rem, calc(100% - 2rem));
-        margin: 0 auto;
-        padding: 1.1rem 0 2.4rem;
-      }
-
-      .topbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        padding: 0 0 1.5rem;
-      }
-
-      .brand {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.6rem;
-        color: var(--text);
-        font-size: 0.82rem;
-        font-weight: 600;
-        letter-spacing: 0.02em;
-      }
-
-      .brand-mark {
-        display: grid;
-        width: 1.7rem;
-        height: 1.7rem;
-        place-items: center;
-        border: 1px solid var(--amber-dim);
-        border-radius: 0.35rem;
-        background: linear-gradient(145deg, var(--surface-2), var(--surface-1));
-        color: var(--amber);
-        font-size: 0.72rem;
-        font-weight: 600;
-      }
-
-      .build-tag {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 0.4rem 0.62rem;
-        color: var(--text-3);
-        font-size: 0.64rem;
-        letter-spacing: 0.14em;
-        line-height: 1;
-      }
-
-      .topbar-actions {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-
-      .theme-toggle {
-        min-height: 1.9rem;
-        border: 1px solid var(--line-strong);
-        border-radius: 0.3rem;
-        padding: 0.32rem 0.52rem;
-        background: transparent;
-        color: var(--text-2);
-        cursor: pointer;
-        font-size: 0.64rem;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .theme-toggle:hover { border-color: var(--amber); color: var(--text); }
-      .theme-toggle[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
-
-      .intro { margin: 0 0 1.4rem; }
-
-      h1 {
-        margin: 0;
-        color: var(--text);
-        font-size: clamp(1.5rem, 2.4vw, 2.1rem);
-        font-weight: 600;
-        line-height: 1.15;
-        letter-spacing: -0.01em;
-      }
-
-      .lede {
-        max-width: 46rem;
-        margin: 0.7rem 0 0;
-        color: var(--text-2);
-        font-size: 0.85rem;
-        line-height: 1.6;
-      }
-
-      .lede code {
-        border-radius: 0.2rem;
-        padding: 0.05rem 0.3rem;
-        background: rgba(255, 255, 255, 0.05);
-        color: var(--text);
-        font-size: 0.8em;
-      }
-
-      /* ---- desk grid: program chain left, inspector rail right, record below ---- */
-
-      .console {
-        display: grid;
-        grid-template-columns: minmax(0, 2fr) minmax(17rem, 1fr);
-        gap: 0.85rem;
-      }
-
-      .monitor { grid-column: 1; grid-row: 1; }
-      .bus     { grid-column: 1; grid-row: 2; }
-      .inspector { grid-column: 2; grid-row: 1 / span 2; }
-      .script  { grid-column: 1 / -1; grid-row: 3; }
-      .diagnostics { grid-column: 1 / -1; grid-row: 4; }
-
-      .monitor, .bus, .inspector, .script, .diagnostics {
-        min-width: 0;
-        overflow: hidden;
-        border: 1px solid var(--line);
-        border-radius: 0.5rem;
-        background: var(--surface-0);
-        box-shadow: 0 0.4rem 1.6rem rgba(0, 0, 0, 0.22), inset 0 1px rgba(255, 255, 255, 0.03);
-      }
-
-      .panel-head {
-        display: flex;
-        align-items: center;
-        gap: 0.6rem;
-        min-height: 2.9rem;
-        padding: 0 0.9rem;
-        border-bottom: 1px solid var(--line);
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.008));
-      }
-
-      .panel-index { color: var(--text-3); font-size: 0.64rem; letter-spacing: 0.08em; }
-
-      .panel-title {
-        margin: 0;
-        color: var(--text-2);
-        font-size: 0.7rem;
-        font-weight: 600;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
-
-      /* ---- 01 program monitor ---- */
-
-      .monitor-tag { color: var(--text-3); font-size: 0.66rem; letter-spacing: 0.08em; }
-
-      .output-state {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-left: auto;
-        border: 1px solid var(--line-strong);
-        border-radius: 999px;
-        padding: 0.32rem 0.6rem;
-        background: rgba(255, 255, 255, 0.02);
-        color: var(--text-2);
-        font-size: 0.68rem;
-      }
-
-      .output-state::before {
-        content: "";
-        width: 0.44rem;
-        height: 0.44rem;
-        border-radius: 50%;
-        background: #555b64;
-        box-shadow: 0 0 0 0.18rem rgba(255, 255, 255, 0.05);
-      }
-      .output-state[data-state="ready"]::before {
-        background: var(--amber);
-        box-shadow: 0 0 0 0.18rem var(--amber-dim);
-      }
-      .output-state[data-state="rendering"]::before {
-        background: var(--amber);
-        box-shadow: 0 0 0 0.18rem var(--amber-dim);
-        animation: pulse 1.1s ease-in-out infinite;
-      }
-      .output-state[data-state="error"]::before {
-        background: var(--error);
-        box-shadow: 0 0 0 0.18rem var(--error-dim);
-      }
-
-      .screen {
-        position: relative;
-        display: grid;
-        min-height: clamp(15rem, 24vw, 22rem);
-        place-items: center;
-        padding: clamp(0.9rem, 2.2vw, 1.8rem);
-        background:
-          linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-          radial-gradient(32rem 17rem at 50% 30%, rgba(255, 255, 255, 0.03), transparent 70%),
-          #0b0c0e;
-        background-size: 1.4rem 1.4rem, 1.4rem 1.4rem, 100% 100%, 100% 100%;
-        box-shadow: inset 0 0 2.5rem rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-      }
-
-      .screen::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        z-index: 0;
-        pointer-events: none;
-        background:
-          linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.05) 50%, transparent calc(50% + 0.5px)),
-          linear-gradient(to right, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.05) 50%, transparent calc(50% + 0.5px));
-      }
-
-      .screen canvas {
-        position: relative;
-        z-index: 1;
-        display: block;
-        width: 100%;
-        height: auto;
-        max-width: 46rem;
-        aspect-ratio: auto;
-        background: transparent;
-        image-rendering: pixelated;
-        box-shadow: 0 1rem 2.6rem rgba(0, 0, 0, 0.5);
-      }
-
-      .screen-placeholder {
-        position: absolute;
-        inset: 0;
-        z-index: 0;
-        display: grid;
-        place-content: center;
-        gap: 0.4rem;
-        margin: 0;
-        text-align: center;
-        color: var(--text-3);
-        pointer-events: none;
-      }
-
-      .screen-placeholder .placeholder-title {
-        display: block;
-        color: var(--text-3);
-        font-size: 0.85rem;
-        font-weight: 600;
-        letter-spacing: 0.24em;
-        text-transform: uppercase;
-      }
-
-      .screen-placeholder .placeholder-sub { display: block; font-size: 0.66rem; letter-spacing: 0.05em; }
-
-      .screen-caption {
-        position: absolute;
-        right: 0.8rem;
-        bottom: 0.55rem;
-        z-index: 2;
-        color: var(--text-3);
-        font-size: 0.64rem;
-        letter-spacing: 0.04em;
-      }
-
-      /* ---- 02 signal bus ---- */
-
-      .bus-row {
-        display: flex;
-        align-items: center;
-        padding: 0.9rem;
-      }
-
-      .bus-node {
-        flex: 1 1 0;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.42rem;
-        border: 1px solid var(--line-strong);
-        border-radius: 0.4rem;
-        padding: 0.75rem 0.9rem;
-        background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
-        color: inherit;
-        cursor: pointer;
-        text-align: left;
-        transition: border-color 130ms ease, background 130ms ease, box-shadow 130ms ease;
-      }
-
-      .bus-node-name {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.55rem;
-        color: var(--text);
-        font-size: 0.72rem;
-        font-weight: 600;
-        letter-spacing: 0.13em;
-        text-transform: uppercase;
-      }
-
-      .bus-lamp {
-        width: 0.46rem;
-        height: 0.46rem;
-        flex: 0 0 auto;
-        border-radius: 50%;
-        background: #555b64;
-        box-shadow: 0 0 0 0.18rem rgba(255, 255, 255, 0.05);
-      }
-
-      .bus-node-code {
-        color: var(--text-3);
-        font-size: 0.66rem;
-        line-height: 1.5;
-        overflow-wrap: anywhere;
-      }
-
-      .bus-node:hover { border-color: rgba(255, 255, 255, 0.26); }
-      .bus-node:hover .bus-lamp { background: #8b919b; }
-
-      .bus-node[aria-pressed="true"] {
-        border-color: var(--amber);
-        background: linear-gradient(180deg, rgba(234, 163, 60, 0.09), rgba(234, 163, 60, 0.03)), var(--surface-1);
-        box-shadow: 0 0 0 1px var(--amber-dim);
-      }
-
-      .bus-node[aria-pressed="true"] .bus-lamp {
-        background: var(--amber);
-        box-shadow: 0 0 0 0.18rem var(--amber-dim);
-      }
-
-      .bus-node[aria-pressed="true"] .bus-node-name { color: #f4e3c8; }
-
-      .bus-link {
-        flex: 0 0 2.4rem;
-        align-self: stretch;
-        display: flex;
-        align-items: center;
-      }
-
-      .bus-link-line {
-        flex: 1;
-        height: 2px;
-        background: var(--amber);
-      }
-
-      .bus-link-head {
-        width: 0.5rem;
-        height: 0.5rem;
-        border-right: 1px solid var(--amber);
-        border-bottom: 1px solid var(--amber);
-        transform: rotate(-45deg);
-      }
-
-      /* ---- 03 inspector ---- */
-
-      .inspector { display: flex; flex-direction: column; }
-
-      .inspector-body { flex: 1; display: flex; flex-direction: column; }
-
-      .inspector-target {
-        margin-left: auto;
-        color: var(--amber);
-        font-size: 0.68rem;
-        font-weight: 600;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-
-      .param-note {
-        margin: 0;
-        padding: 0.7rem 1rem 0.4rem;
-        color: var(--text-3);
-        font-size: 0.66rem;
-        line-height: 1.55;
-      }
-
-      .param-field {
-        display: grid;
-        grid-template-columns: 1fr auto auto;
-        align-items: center;
-        gap: 0.55rem;
-        padding: 0.6rem 1rem;
-      }
-
-      .param-field + .param-field { border-top: 1px solid var(--line); }
-
-      .param-field label {
-        color: var(--text-2);
-        font-size: 0.68rem;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-      }
-
-      .param-field input {
-        width: 6.2rem;
-        border: 1px solid var(--line-strong);
-        border-radius: 0.3rem;
-        padding: 0.38rem 0.5rem;
-        background: var(--field);
-        color: var(--text);
-        font-size: 0.78rem;
-        text-align: right;
-        caret-color: var(--amber);
-      }
-
-      .param-field input:hover { border-color: rgba(255, 255, 255, 0.24); }
-      .param-field input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-color: var(--amber); }
-
-      .param-unit { color: var(--text-3); font-size: 0.64rem; }
-
-      .node-info { margin: 0; padding: 0.5rem 1rem 0.9rem; }
-
-      .node-info dt {
-        margin-top: 0.65rem;
-        color: var(--text-3);
-        font-size: 0.64rem;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-      }
-
-      .node-info dd {
-        margin: 0.18rem 0 0;
-        color: var(--text);
-        font-size: 0.76rem;
-        line-height: 1.55;
-        overflow-wrap: anywhere;
-      }
-
-      .graph-summary {
-        margin: 0;
-        padding: 0.75rem 1rem 0.9rem;
-        border-top: 1px solid var(--line);
-        color: var(--text-2);
-        font-size: 0.7rem;
-        line-height: 1.6;
-        overflow-wrap: anywhere;
-      }
-
-      /* ---- 04 script record ---- */
-
-      .script { display: flex; flex-direction: column; }
-
-      .file-tag {
-        border: 1px solid var(--line-strong);
-        border-radius: 0.3rem;
-        padding: 0.26rem 0.45rem;
-        color: var(--text-3);
-        font-size: 0.64rem;
-        letter-spacing: 0.06em;
-      }
-
-      .graph-status {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        margin-left: auto;
-        border: 1px solid var(--amber-dim);
-        border-radius: 999px;
-        padding: 0.28rem 0.55rem;
-        color: var(--amber);
-        font-size: 0.64rem;
-        font-weight: 600;
-        letter-spacing: 0.1em;
-      }
-
-      .graph-status::before {
-        content: "";
-        width: 0.4rem;
-        height: 0.4rem;
-        border-radius: 50%;
-        background: var(--amber);
-        box-shadow: 0 0 0 0.15rem var(--amber-dim);
-      }
-
-      textarea {
-        display: block;
-        width: 100%;
-        min-height: clamp(14rem, 20vw, 18rem);
-        max-height: 26rem;
-        resize: vertical;
-        border: 0;
-        outline: 0;
-        padding: 1rem 1.1rem;
-        background: var(--field);
-        color: var(--text);
-        caret-color: var(--amber);
-        font-size: 0.78rem;
-        line-height: 1.7;
-        tab-size: 2;
-      }
-
-      textarea::selection { background: var(--amber-dim); }
-      textarea:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--amber); }
-
-      .action-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        padding: 0.8rem 1rem;
-        border-top: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.018);
-      }
-
-      .run-button {
-        display: inline-flex;
-        min-height: 2.4rem;
-        align-items: center;
-        gap: 0.6rem;
-        border: 1px solid #f0b055;
-        border-radius: 0.35rem;
-        padding: 0.45rem 0.7rem 0.45rem 0.9rem;
-        background: linear-gradient(180deg, var(--amber-bright), var(--amber));
-        color: var(--amber-ink);
-        cursor: pointer;
-        font-size: 0.78rem;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        transition: filter 130ms ease, transform 130ms ease;
-      }
-
-      .run-button:hover:not(:disabled) { filter: brightness(1.07); }
-      .run-button:active:not(:disabled) { transform: translateY(1px); }
-      .run-button:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 3px; }
-      .run-button:disabled { cursor: not-allowed; opacity: 0.4; filter: saturate(0.25); }
-
-      kbd {
-        border: 1px solid rgba(32, 21, 5, 0.35);
-        border-radius: 0.25rem;
-        padding: 0.12rem 0.3rem;
-        background: rgba(32, 21, 5, 0.12);
-        color: var(--amber-ink);
-        font-size: 0.64rem;
-      }
-
-      .runtime-status {
-        display: inline-flex;
-        min-width: 0;
-        align-items: center;
-        gap: 0.55rem;
-        color: var(--text-2);
-        font-size: 0.74rem;
-        line-height: 1.45;
-        overflow-wrap: anywhere;
-      }
-
-      .status-dot {
-        width: 0.45rem;
-        height: 0.45rem;
-        flex: 0 0 auto;
-        border-radius: 50%;
-        background: #555b64;
-        box-shadow: 0 0 0 0.18rem rgba(255, 255, 255, 0.05);
-      }
-
-      .runtime-status[data-state="ready"] .status-dot {
-        background: var(--amber);
-        box-shadow: 0 0 0 0.18rem var(--amber-dim);
-      }
-      .runtime-status[data-state="rendering"] .status-dot {
-        background: var(--amber);
-        box-shadow: 0 0 0 0.18rem var(--amber-dim);
-        animation: pulse 1.1s ease-in-out infinite;
-      }
-      .runtime-status[data-state="loading"] .status-dot {
-        background: var(--amber);
-        box-shadow: 0 0 0 0.18rem var(--amber-dim);
-        animation: pulse 1.6s ease-in-out infinite;
-      }
-      .runtime-status[data-state="error"] .status-dot {
-        background: var(--error);
-        box-shadow: 0 0 0 0.18rem var(--error-dim);
-      }
-
-      /* ---- diagnostics ---- */
-
-      .diagnostics summary {
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        padding: 0.75rem 1rem;
-        color: var(--text-2);
-        font-size: 0.7rem;
-        font-weight: 600;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        user-select: none;
-      }
-
-      .diagnostics summary::before {
-        content: "";
-        width: 0.44rem;
-        height: 0.44rem;
-        border-radius: 50%;
-        background: #555b64;
-        box-shadow: 0 0 0 0.18rem rgba(255, 255, 255, 0.05);
-      }
-
-      .diagnostics summary:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
-
-      .diagnostics[open] summary { border-bottom: 1px solid var(--line); }
-
-      .diagnostics-toolbar {
-        display: flex;
-        justify-content: flex-end;
-        padding: 0.5rem 0.65rem;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .diagnostics-clear {
-        border: 1px solid var(--line-strong);
-        border-radius: 0.3rem;
-        padding: 0.28rem 0.55rem;
-        background: transparent;
-        color: var(--text-2);
-        cursor: pointer;
-        font-size: 0.68rem;
-      }
-
-      .diagnostics-clear:hover { border-color: var(--text-3); color: var(--text); }
-
-      .diagnostics-log {
-        max-height: 16rem;
-        overflow: auto;
-        margin: 0;
-        padding: 0.75rem 1rem 0.9rem;
-        color: var(--text-2);
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        font-size: 0.7rem;
-        line-height: 1.55;
-      }
-
-      .diagnostic-error { color: #ff9a9a; }
-      .diagnostic-warn { color: #e9c46a; }
-      .diagnostic-info { color: var(--text-2); }
-
-      .limitations-body {
-        padding: 0.75rem 1rem 0.9rem;
-        color: var(--text-2);
-        font-size: 0.72rem;
-        line-height: 1.65;
-      }
-      .limitations-body p { margin: 0 0 0.55rem; }
-      .limitations-body p:first-child { margin-top: 0; }
-      .limitations-body p:last-child { margin-bottom: 0.55rem; }
-      .limitations-body ul { margin: 0 0 0.7rem; padding-left: 1.1rem; }
-      .limitations-body li { margin: 0.15rem 0; }
-      .limitations-body code {
-        color: var(--amber);
-        font-size: 0.7rem;
-        overflow-wrap: anywhere;
-      }
-      .limitations-body strong { color: var(--text); font-weight: 600; }
-
-      .note {
-        margin: 1rem 0 0;
-        color: var(--text-3);
-        font-size: 0.7rem;
-        line-height: 1.6;
-      }
-      .note strong { color: var(--text-2); font-weight: 600; }
-
-      @keyframes pulse { 50% { opacity: 0.35; } }
-
-      @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after { animation: none !important; transition: none !important; }
-      }
-
-      @media (max-width: 56rem) {
-        .app-shell { width: min(100% - 1rem, 46rem); padding-top: 0.6rem; }
-        .console { grid-template-columns: 1fr; }
-        .monitor, .bus, .inspector, .script, .diagnostics { grid-column: 1; grid-row: auto; }
-        .screen { min-height: auto; }
-        .bus-row { flex-direction: column; align-items: stretch; gap: 0.7rem; }
-        .bus-link {
-          flex: 0 0 auto;
-          align-self: center;
-          flex-direction: column;
-          justify-content: center;
-          height: 1.6rem;
-        }
-        .bus-link-line { flex: 1; width: 2px; height: auto; }
-        .bus-link-head {
-          border: 0;
-          border-top: 7px solid var(--amber);
-          border-left: 4px solid transparent;
-          border-right: 4px solid transparent;
-        }
-        .action-bar { align-items: flex-start; flex-direction: column; }
-        .runtime-status { width: 100%; }
-      }
-
-      @media (max-width: 28rem) {
-        .build-tag, kbd { display: none; }
-      }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+      .skip-link { position: fixed; z-index: 20; top: .7rem; left: .7rem; padding: .55rem .7rem; color: var(--blue-950); background: var(--cyan); transform: translateY(-180%); text-decoration: none; }
+      .skip-link:focus { transform: translateY(0); }
+
+      .app-shell { display: grid; min-height: 100vh; grid-template-rows: auto minmax(0, 1fr) auto; }
+      .command-bar { display: flex; align-items: center; min-height: 3.35rem; gap: .75rem; padding: .45rem .85rem; border-bottom: 1px solid var(--line); background: var(--blue-800); }
+      .brand { display: inline-flex; align-items: center; gap: .55rem; min-width: max-content; padding-right: .9rem; border-right: 1px solid var(--line); color: var(--paper); font-size: .88rem; font-weight: 700; letter-spacing: -.03em; }
+      .brand-mark { display: grid; width: 1.65rem; height: 1.65rem; place-content: center; border: 1px solid var(--cyan); color: var(--cyan); font-size: .68rem; letter-spacing: -.08em; }
+      .runtime-readout { display: inline-flex; align-items: center; gap: .45rem; margin-left: auto; color: var(--paper-muted); font-size: .65rem; letter-spacing: .04em; white-space: nowrap; }
+      .runtime-readout::before { content: ""; width: .48rem; height: .48rem; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 .16rem rgba(139, 255, 209, .14); }
+      .theme-toggle { min-height: 2rem; border: 1px solid var(--line); padding: 0 .55rem; background: transparent; color: var(--paper-muted); cursor: pointer; font-size: .63rem; letter-spacing: .06em; text-transform: uppercase; }
+      .theme-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
+
+      .workbench { display: grid; min-height: 0; grid-template-columns: minmax(14.5rem, 17rem) minmax(28rem, 1fr) minmax(16rem, 19rem); grid-template-rows: minmax(29rem, 1fr) minmax(13rem, .35fr); overflow: hidden; }
+      .library, .inspector, .source-panel { min-width: 0; background: var(--blue-900); }
+      .library { grid-column: 1; grid-row: 1 / span 2; border-right: 1px solid var(--line); overflow: auto; }
+      .graph-panel { position: relative; min-width: 0; min-height: 0; overflow: hidden; background-color: var(--blue-800); background-image: linear-gradient(var(--cyan-dim) 1px, transparent 1px), linear-gradient(90deg, var(--cyan-dim) 1px, transparent 1px), linear-gradient(rgba(115, 230, 255, .08) 1px, transparent 1px), linear-gradient(90deg, rgba(115, 230, 255, .08) 1px, transparent 1px); background-size: 5rem 5rem, 5rem 5rem, 1rem 1rem, 1rem 1rem; }
+      .graph-panel::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(115, 230, 255, .05), inset 0 0 4rem rgba(0, 20, 59, .26); }
+      .inspector { grid-column: 3; grid-row: 1; border-left: 1px solid var(--line); overflow: auto; }
+      .source-panel { grid-column: 2 / 4; grid-row: 2; border-top: 1px solid var(--line); border-left: 1px solid var(--line); min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+
+      .panel-head { display: flex; align-items: center; min-height: 2.7rem; gap: .65rem; padding: 0 .75rem; border-bottom: 1px solid var(--line); background: rgba(1, 28, 71, .2); }
+      .panel-head h1, .panel-head h2, .panel-head p { margin: 0; font-size: .66rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+      .panel-head h1 { color: var(--paper); }
+      .panel-meta { margin-left: auto; color: var(--paper-muted); font-size: .62rem; letter-spacing: .05em; white-space: nowrap; }
+      .count-chip { border: 1px solid var(--line); padding: .18rem .35rem; color: var(--cyan); font-size: .6rem; }
+
+      .library-search { position: relative; padding: .65rem .7rem; border-bottom: 1px solid var(--line); }
+      .library-search input { width: 100%; min-height: 2.25rem; border: 1px solid var(--line); padding: 0 .65rem 0 2.1rem; background: var(--blue-950); color: var(--paper); caret-color: var(--cyan); font-size: .72rem; }
+      .library-search svg { position: absolute; top: 1.3rem; left: 1.3rem; width: .9rem; height: .9rem; fill: none; stroke: var(--cyan); stroke-width: 1.5; }
+      .library-tabs { display: flex; border-bottom: 1px solid var(--line); }
+      .library-tab { flex: 1; min-height: 2.1rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--paper-muted); cursor: pointer; font-size: .59rem; letter-spacing: .06em; text-transform: uppercase; }
+      .library-tab[aria-selected="true"] { color: var(--cyan); border-bottom-color: var(--cyan); }
+      .library-groups { padding: .35rem 0 .8rem; }
+      .function-group { border-bottom: 1px solid var(--line-subtle); }
+      .function-group summary { display: flex; align-items: center; min-height: 2.35rem; padding: 0 .75rem; color: var(--paper); cursor: pointer; font-size: .67rem; font-weight: 700; letter-spacing: .04em; list-style: none; }
+      .function-group summary::-webkit-details-marker { display: none; }
+      .function-group summary::before { content: "+"; width: 1rem; color: var(--cyan); font-size: .8rem; }
+      .function-group[open] summary::before { content: "–"; }
+      .function-group summary span { margin-left: auto; color: var(--paper-muted); font-size: .58rem; font-weight: 400; }
+      .function-list { padding: 0 0 .45rem; }
+      .function-entry { width: 100%; display: grid; grid-template-columns: 1rem minmax(0, 1fr) auto; gap: .3rem; padding: .4rem .75rem .4rem 1rem; border: 0; border-left: 2px solid transparent; background: transparent; color: var(--paper-muted); cursor: pointer; font-size: .67rem; line-height: 1.3; text-align: left; }
+      .function-entry::before { content: "f"; color: var(--cyan); font-size: .65rem; font-style: italic; }
+      .function-entry:hover, .function-entry[aria-current="true"] { color: var(--paper); border-left-color: var(--cyan); background: rgba(115, 230, 255, .08); }
+      .function-state { align-self: center; color: var(--paper-muted); font-size: .5rem; letter-spacing: .05em; text-transform: uppercase; } .function-state.verified { color: var(--success); }
+      .library-empty { margin: .85rem; color: var(--paper-muted); font-size: .68rem; line-height: 1.5; }
+
+      .graph-rulers { position: absolute; inset: 0 0 auto 0; z-index: 2; display: flex; height: 1.85rem; padding-left: 2.35rem; border-bottom: 1px solid var(--line); background: rgba(3, 30, 71, .86); color: var(--paper-muted); font-size: .57rem; pointer-events: none; }
+      .graph-rulers span { width: 25%; padding: .62rem 0 0 .4rem; border-left: 1px solid var(--line-subtle); }
+      .canvas-title { position: absolute; top: 2.55rem; left: 2.2rem; z-index: 1; color: var(--paper-muted); font-size: .59rem; letter-spacing: .08em; text-transform: uppercase; pointer-events: none; }
+      .canvas-title strong { color: var(--paper); }
+      .graph-nodes { position: absolute; inset: 1.85rem 0 0; min-height: 30rem; }
+      .graph-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+      .graph-wires path { fill: none; stroke: var(--cyan); stroke-width: 2.2; vector-effect: non-scaling-stroke; filter: drop-shadow(0 1px 3px rgba(0, 24, 70, .55)); }
+      .graph-wires path.is-output { stroke: var(--signal); }
+      .graph-wires circle { fill: var(--blue-800); stroke: var(--cyan); stroke-width: 2; }
+      .graph-wires circle.is-output { stroke: var(--signal); }
+      .graph-node { position: absolute; width: min(15rem, 25%); min-width: 9.5rem; padding: 0; border: 1px solid var(--cyan); background: var(--blue-900); color: var(--paper); box-shadow: 0 .7rem 1.5rem rgba(0, 19, 56, .28); cursor: pointer; text-align: left; transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+      .graph-node:hover { transform: translateY(-2px); box-shadow: 0 .9rem 1.75rem rgba(0, 19, 56, .38); }
+      .graph-node[aria-pressed="true"] { border-color: var(--paper); box-shadow: 0 0 0 2px var(--cyan-dim), 0 .9rem 1.75rem rgba(0, 19, 56, .42); }
+      .graph-node[data-kind="output"] { border-color: var(--signal); }
+      .graph-node-header { display: flex; align-items: center; gap: .45rem; min-height: 2rem; padding: 0 .55rem; border-bottom: 1px solid var(--line); background: rgba(115, 230, 255, .08); font-size: .73rem; font-weight: 700; }
+      .graph-node[data-kind="output"] .graph-node-header { background: var(--signal-dim); }
+      .node-mark { width: .56rem; height: .56rem; border: 1px solid currentColor; transform: rotate(45deg); }
+      .node-namespace { margin-left: auto; color: var(--paper-muted); font-size: .56rem; font-weight: 400; }
+      .node-body { padding: .55rem; color: var(--paper-muted); font-size: .62rem; line-height: 1.4; }
+      .node-row { display: flex; justify-content: space-between; gap: .4rem; min-height: 1.3rem; border-bottom: 1px solid var(--line-subtle); }
+      .node-row:last-child { border: 0; }
+      .node-port { position: absolute; top: 50%; width: .75rem; height: .75rem; border: 2px solid var(--cyan); border-radius: 50%; background: var(--blue-800); transform: translateY(-50%); }
+      .node-port.in { left: -.43rem; } .node-port.out { right: -.43rem; }
+      .graph-node[data-kind="output"] .node-port { border-color: var(--signal); }
+      .program-node { width: min(19rem, 34%); }
+      .program-node canvas { display: block; width: 100%; min-height: 5rem; max-height: 9.5rem; background: #06102b; image-rendering: pixelated; }
+      .program-node .node-body { display: grid; grid-template-columns: repeat(2, 1fr); gap: .35rem; }
+      .node-empty { position: absolute; left: 50%; top: 50%; width: min(28rem, 70%); color: var(--paper-muted); font-size: .72rem; line-height: 1.6; text-align: center; transform: translate(-50%, -50%); }
+      .minimap { position: absolute; right: 1rem; bottom: 1rem; width: 8.8rem; height: 5.2rem; border: 1px solid var(--line); padding: .4rem; background: rgba(3, 30, 71, .86); }
+      .minimap svg { width: 100%; height: 100%; fill: none; stroke: var(--paper-muted); stroke-width: 1.3; }
+      .crosshair { position: absolute; bottom: 1.25rem; left: 1.25rem; width: 1rem; height: 1rem; border: 1px solid var(--cyan); border-radius: 50%; pointer-events: none; }
+      .crosshair::before, .crosshair::after { content: ""; position: absolute; background: var(--cyan); } .crosshair::before { top: .4rem; left: - .35rem; width: 1.65rem; height: 1px; } .crosshair::after { top: -.35rem; left: .4rem; width: 1px; height: 1.65rem; }
+
+      .inspector-section { padding: .85rem .8rem; border-bottom: 1px solid var(--line); }
+      .inspector-title { margin: 0 0 .5rem; color: var(--paper); font-size: .98rem; font-weight: 700; letter-spacing: -.03em; }
+      .inspector-namespace { margin: 0; color: var(--cyan); font-size: .62rem; }
+      .spec-list { display: grid; grid-template-columns: 5.6rem minmax(0, 1fr); gap: 0; margin: 0; border-top: 1px solid var(--line-subtle); }
+      .spec-list dt, .spec-list dd { margin: 0; padding: .42rem .1rem; border-bottom: 1px solid var(--line-subtle); font-size: .62rem; line-height: 1.45; }
+      .spec-list dt { color: var(--paper-muted); text-transform: uppercase; letter-spacing: .05em; } .spec-list dd { color: var(--paper); overflow-wrap: anywhere; }
+      .inspector-copy { margin: 0; color: var(--paper-muted); font-size: .68rem; line-height: 1.55; }
+      .field-label { display: block; margin: .75rem 0 .32rem; color: var(--paper-muted); font-size: .59rem; letter-spacing: .08em; text-transform: uppercase; }
+      .param-field { display: grid; grid-template-columns: 1fr 5.4rem .8rem; align-items: center; gap: .4rem; padding: .42rem 0; border-top: 1px solid var(--line-subtle); color: var(--paper-muted); font-size: .66rem; }
+      .param-field input { width: 100%; min-height: 1.85rem; border: 1px solid var(--line); padding: 0 .35rem; background: var(--blue-950); color: var(--paper); text-align: right; caret-color: var(--cyan); }
+      .param-field span:last-child { color: var(--cyan); font-size: .57rem; }
+      .inspector-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; }
+      .blueprint-button { min-height: 2.1rem; border: 1px solid var(--cyan); padding: 0 .55rem; background: transparent; color: var(--cyan); cursor: pointer; font-size: .62rem; letter-spacing: .04em; }
+      .blueprint-button:hover { color: var(--blue-950); background: var(--cyan); }
+      .blueprint-button.signal { border-color: var(--signal); color: var(--signal); } .blueprint-button.signal:hover { color: var(--blue-950); background: var(--signal); }
+      .inspector-note { margin: .55rem 0 0; color: var(--paper-muted); font-size: .6rem; line-height: 1.5; }
+
+      .source-panel textarea { min-height: 0; width: 100%; resize: vertical; border: 0; padding: .75rem .9rem .75rem 3rem; background-color: var(--blue-950); background-image: linear-gradient(90deg, rgba(115, 230, 255, .14) 1px, transparent 1px); background-size: 2.2rem 100%; color: var(--paper); caret-color: var(--cyan); font-size: .7rem; line-height: 1.65; tab-size: 2; }
+      .source-panel textarea:focus { outline: 1px solid var(--cyan); outline-offset: -1px; }
+      .source-actions { display: flex; align-items: center; gap: .75rem; padding: .55rem .75rem; border-top: 1px solid var(--line); background: var(--blue-900); }
+      .run-button { display: inline-flex; align-items: center; gap: .55rem; min-height: 2.2rem; border: 1px solid var(--signal); padding: 0 .7rem; background: var(--signal); color: var(--blue-950); cursor: pointer; font-size: .69rem; font-weight: 700; letter-spacing: .04em; }
+      .run-button:disabled { cursor: not-allowed; opacity: .48; } .run-button:not(:disabled):hover { filter: brightness(1.1); }
+      kbd { border: 1px solid rgba(3, 30, 71, .42); padding: .1rem .25rem; background: rgba(3, 30, 71, .1); font-size: .56rem; }
+      .runtime-status { display: inline-flex; align-items: center; gap: .48rem; min-width: 0; margin-left: auto; color: var(--paper-muted); font-size: .64rem; overflow-wrap: anywhere; }
+      .status-dot { width: .45rem; height: .45rem; flex: none; border-radius: 50%; background: var(--paper-muted); } .runtime-status[data-state="ready"] .status-dot { background: var(--success); box-shadow: 0 0 0 .16rem rgba(139, 255, 209, .12); } .runtime-status[data-state="rendering"] .status-dot, .runtime-status[data-state="loading"] .status-dot { background: var(--cyan); animation: ping 1.1s ease-in-out infinite; } .runtime-status[data-state="error"] .status-dot { background: var(--signal); }
+      .graph-status { margin-left: auto; color: var(--cyan); font-size: .6rem; letter-spacing: .05em; } .graph-status[data-state="error"] { color: var(--signal); }
+      .footer { display: flex; min-height: 1.6rem; align-items: center; gap: 1rem; padding: 0 .75rem; border-top: 1px solid var(--line); background: var(--blue-800); color: var(--paper-muted); font-size: .55rem; letter-spacing: .04em; }
+      .footer span:first-child::before { content: ""; display: inline-block; width: .42rem; height: .42rem; margin-right: .35rem; border-radius: 50%; background: var(--success); }
+
+      .diagnostics { grid-column: 1 / -1; border-top: 1px solid var(--line); background: var(--blue-950); } .diagnostics summary { display: flex; align-items: center; min-height: 2.25rem; padding: 0 .8rem; color: var(--paper-muted); cursor: pointer; font-size: .61rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; } .diagnostics[open] summary { border-bottom: 1px solid var(--line); }
+      .diagnostics-toolbar { display: flex; justify-content: flex-end; padding: .45rem .75rem; border-bottom: 1px solid var(--line-subtle); } .diagnostics-clear { border: 1px solid var(--line); padding: .25rem .45rem; background: transparent; color: var(--paper-muted); cursor: pointer; font-size: .6rem; } .diagnostics-log { max-height: 12rem; overflow: auto; margin: 0; padding: .7rem .85rem; color: var(--paper-muted); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .64rem; line-height: 1.55; } .diagnostic-error { color: #ff9d85; } .diagnostic-warn { color: #ffe29b; }
+      .limitations-body { padding: .8rem; color: var(--paper-muted); font-size: .67rem; line-height: 1.55; } .limitations-body code { color: var(--cyan); } .limitations-body ul { margin: .4rem 0; padding-left: 1rem; }
+      @keyframes ping { 50% { opacity: .35; } }
+      @media (max-width: 68rem) { .workbench { grid-template-columns: minmax(13rem, 15rem) minmax(24rem, 1fr); grid-template-rows: minmax(30rem, 1fr) minmax(14rem, .4fr) auto; } .inspector { grid-column: 1 / -1; grid-row: 3; border-left: 0; border-top: 1px solid var(--line); } .source-panel { grid-column: 2; grid-row: 2; } .library { grid-row: 1 / span 2; } .graph-panel { grid-column: 2; } }
+      @media (max-width: 48rem) { .command-bar { overflow-x: auto; } .runtime-readout { display: none; } .workbench { display: block; overflow: visible; } .library, .graph-panel, .inspector, .source-panel { min-height: auto; border-left: 0; border-right: 0; } .library { max-height: 12.5rem; } .graph-panel { height: 34rem; } .inspector { max-height: none; } .source-panel textarea { min-height: 13rem; } .program-node { width: 8rem; } .graph-node { min-width: 8.3rem; } .graph-node[data-index="1"] { left: 37% !important; } .graph-node[data-index="2"] { left: 61% !important; } }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
     </style>
   </head>
   <body>
     <!--
-      DIRECTION — BROADCAST VISION MIXER
-
-      THESIS: a broadcast production desk turns source → effect → program output
-      into a visibly routable working loop, refusing the generic
-      code-editor-plus-preview split.
-
-      OWN-WORLD: night control room, graphite equipment surfaces, signal amber as
-      the sole active-route accent, precise labels and real code in monospace only.
-
-      TOPOLOGY: Program monitor dominates; a signal bus renders the actual
-      three-stage path; a focused inspector provides parameters; script is an
-      editable technical record, not the primary composition.
-
-      INTERACTION: selecting a source/effect bus changes the inspector; changing
-      source dimensions regenerates the supported script and marks it ready to
-      run; Run preserves current rendering.
-
-      ADAPTATION: on narrow screens monitor → active signal route → inspector →
-      script stack linearly in DOM order.
+      THESIS: Blueprint Graph makes an upstream-backed VapourSynth plan spatial,
+      refusing the familiar editor-plus-preview split.
+      OWN-WORLD: deep blueprint blue, paper-white construction lines, cyan routes,
+      and orange-red output/error marks; drafting geometry is functional.
+      STORY: authors browse the standard core, inspect a function, author Python,
+      and see its route before running it in the browser worker.
+      FIRST VIEWPORT: library left, working graph center, inspector right, code
+      below; Run is anchored to the source record.
+      FORM: approved composition A; seed ca7fc263.
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
     -->
-    <a class="skip-link" href="#program-monitor">Skip to program monitor</a>
-
+    <a class="skip-link" href="#graph-canvas">Skip to node graph</a>
     <main class="app-shell">
-      <header class="topbar">
-        <div class="brand"><span class="brand-mark" aria-hidden="true">VS</span><span>VapourSynth WebAssembly</span></div>
-        <div class="topbar-actions">
-          <span class="build-tag">BROWSER BUILD</span>
-          <button class="theme-toggle" type="button" aria-pressed="false">Light mode</button>
-        </div>
+      <header class="command-bar">
+        <div class="brand"><span class="brand-mark">VS</span><span>VapourSynth WebAssembly</span></div>
+        <span class="runtime-readout">WASM core · worker-owned</span>
+        <button class="theme-toggle" type="button" aria-pressed="false">Dark draft</button>
       </header>
 
-      <section class="intro" aria-labelledby="page-title">
-        <h1 id="page-title">Route a real frame pipeline at the desk.</h1>
-        <p class="lede">Write a compact <code>.vpy</code> graph, run it in a worker-owned browser runtime, and inspect the resulting RGBA frame here.</p>
-      </section>
+      <section class="workbench" aria-label="VapourSynth blueprint graph authoring workspace">
+        <aside class="library" aria-labelledby="library-title">
+          <header class="panel-head"><h1 id="library-title">Core function library</h1><span class="count-chip" data-library-count>0 refs</span></header>
+          <label class="library-search"><span class="sr-only">Search core functions</span><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><path d="M9.5 9.5L14 14"/></svg><input type="search" data-library-search placeholder="Search the standard core"></label>
+          <div class="library-tabs" role="tablist" aria-label="Function library filter"><button class="library-tab" type="button" role="tab" aria-selected="true">All</button><button class="library-tab" type="button" role="tab" aria-selected="false">Video</button><button class="library-tab" type="button" role="tab" aria-selected="false">Audio</button></div>
+          <div class="library-groups" data-library-groups></div>
+        </aside>
 
-      <section class="console" aria-label="Broadcast vision mixer">
-        <!-- 01 · program monitor -->
-        <section class="monitor" id="program-monitor" aria-labelledby="monitor-title">
-          <header class="panel-head">
-            <span class="panel-index" aria-hidden="true">01</span>
-            <h2 class="panel-title" id="monitor-title">Program monitor</h2>
-            <span class="monitor-tag">OUT 0</span>
-            <span class="output-state" data-output-state="idle" data-state="idle" aria-live="polite">awaiting render</span>
-          </header>
-          <div class="screen">
-            <canvas width="320" height="180" aria-label="Rendered VapourSynth frame"></canvas>
-            <p class="screen-placeholder" aria-hidden="true">
-              <span class="placeholder-title">No program signal</span>
-              <span class="placeholder-sub">awaiting render · editor.vpy not yet executed</span>
-            </p>
-            <span class="screen-caption">RGBA8 · worker output</span>
-          </div>
+        <section class="graph-panel" id="graph-canvas" aria-labelledby="graph-title">
+          <div class="graph-rulers" aria-hidden="true"><span>000</span><span>500</span><span>1000</span><span>1500</span></div>
+          <p class="canvas-title" id="graph-title"><strong data-graph-count>03</strong> plotted operations · editor.vpy</p>
+          <div class="graph-nodes" data-graph-nodes></div>
+          <div class="crosshair" aria-hidden="true"></div>
+          <div class="minimap" aria-label="Graph overview"><svg viewBox="0 0 120 70"><rect x="2" y="2" width="116" height="66"/><path d="M12 22h21v13H12zM48 30h21v13H48zM85 35h21v13H85zM33 28h15M69 36h16"/></svg></div>
         </section>
 
-        <!-- 02 · signal bus -->
-        <section class="bus" aria-labelledby="bus-title" aria-label="Signal route from source through invert to program output">
-          <header class="panel-head">
-            <span class="panel-index" aria-hidden="true">02</span>
-            <h2 class="panel-title" id="bus-title">Signal bus</h2>
-          </header>
-          <div class="bus-row">
-            <button class="bus-node" type="button" data-graph-node="source" aria-pressed="true">
-              <span class="bus-node-name"><span class="bus-lamp" aria-hidden="true"></span>Source</span>
-              <span class="bus-node-code">std.BlankClip(width=320, height=180, format=vs.RGB24, color=[32, 96, 224])</span>
-            </button>
-            <span class="bus-link" aria-hidden="true"><span class="bus-link-line"></span><span class="bus-link-head"></span></span>
-            <button class="bus-node" type="button" data-graph-node="effect" aria-pressed="false">
-              <span class="bus-node-name"><span class="bus-lamp" aria-hidden="true"></span>Invert</span>
-              <span class="bus-node-code">std.Invert()</span>
-            </button>
-            <span class="bus-link" aria-hidden="true"><span class="bus-link-line"></span><span class="bus-link-head"></span></span>
-            <button class="bus-node" type="button" data-graph-node="output" aria-pressed="false">
-              <span class="bus-node-name"><span class="bus-lamp" aria-hidden="true"></span>Program output</span>
-              <span class="bus-node-code">clip.set_output()</span>
-            </button>
+        <aside class="inspector" aria-labelledby="inspector-heading">
+          <header class="panel-head"><h2 id="inspector-heading">Node inspector</h2><span class="panel-meta" data-inspector-state>SELECTED</span></header>
+          <div class="inspector-section"><h3 class="inspector-title" data-inspector-title>BlankClip</h3><p class="inspector-namespace" data-inspector-path>vs.core.std.BlankClip</p></div>
+          <div class="inspector-section"><dl class="spec-list" data-inspector-specs></dl></div>
+          <div class="inspector-section" data-dimension-controls>
+            <p class="inspector-copy">Edit the selected source node. The runnable Python record updates with these values.</p>
+            <label class="field-label" for="source-width">Source dimensions</label>
+            <div class="param-field"><label for="source-width">Width</label><input id="source-width" type="number" min="64" max="1920" step="1" value="320" data-graph-width data-graph-value="width"><span>px</span></div>
+            <div class="param-field"><label for="source-height">Height</label><input id="source-height" type="number" min="64" max="1080" step="1" value="180" data-graph-height data-graph-value="height"><span>px</span></div>
           </div>
-        </section>
+          <div class="inspector-section"><div class="inspector-actions"><button class="blueprint-button" type="button" data-copy-call>Copy call</button><button class="blueprint-button signal" type="button" data-insert-note>Insert source note</button></div><p class="inspector-note" data-inspector-note>Library entries are reference material. An authored call is plotted only after its valid Python arguments exist in the source record.</p></div>
+        </aside>
 
-        <!-- 03 · inspector -->
-        <section class="inspector" data-graph-inspector aria-labelledby="inspector-title">
-          <header class="panel-head">
-            <span class="panel-index" aria-hidden="true">03</span>
-            <h2 class="panel-title" id="inspector-title">Inspector</h2>
-            <span class="inspector-target" data-graph-title>Source</span>
-          </header>
-          <div class="inspector-body">
-            <div class="param-block" data-param-for="source" data-graph-dimensions>
-              <p class="param-note">Clip dimensions — changing a value regenerates the script and marks it ready to run.</p>
-              <div class="param-field">
-                <label for="source-width">Width</label>
-                <input id="source-width" type="number" step="1" value="320" data-graph-width data-graph-value="width">
-                <span class="param-unit">px</span>
-              </div>
-              <div class="param-field">
-                <label for="source-height">Height</label>
-                <input id="source-height" type="number" step="1" value="180" data-graph-height data-graph-value="height">
-                <span class="param-unit">px</span>
-              </div>
-            </div>
-            <div class="param-block" data-param-for="effect" hidden>
-              <dl class="node-info">
-                <dt>Operator</dt>
-                <dd>std.Invert()</dd>
-                <dt>Parameters</dt>
-                <dd>None — inverts every channel of the source clip.</dd>
-                <dt>Format</dt>
-                <dd>Preserves the source clip format (RGB24).</dd>
-              </dl>
-            </div>
-            <div class="param-block" data-param-for="output" hidden>
-              <dl class="node-info">
-                <dt>Register</dt>
-                <dd>clip.set_output()</dd>
-                <dt>Output</dt>
-                <dd>0 — RGBA8 frame rendered in the worker.</dd>
-                <dt>Dimensions</dt>
-                <dd>Follow the source clip.</dd>
-              </dl>
-            </div>
-            <p class="graph-summary" data-graph-summary>std.BlankClip(width=320, height=180, format=vs.RGB24, color=[32, 96, 224]) → std.Invert() → clip.set_output()</p>
-          </div>
-        </section>
-
-        <!-- 04 · script record -->
-        <section class="script" aria-labelledby="script-title">
-          <header class="panel-head">
-            <span class="panel-index" aria-hidden="true">04</span>
-            <h2 class="panel-title" id="script-title">Script record</h2>
-            <span class="file-tag">editor.vpy</span>
-            <span class="graph-status" data-graph-status>READY</span>
-          </header>
-          <label>
-            <span class="sr-only">Authoring script (.vpy)</span>
-            <textarea spellcheck="false" aria-label="Authoring script (.vpy)">import vapoursynth as vs
+        <section class="source-panel" aria-labelledby="source-title">
+          <header class="panel-head"><h2 id="source-title">Python source record</h2><span class="panel-meta">editor.vpy</span><span class="graph-status" data-graph-status data-state="ready">PLOTTED</span></header>
+          <label><span class="sr-only">Authoring script (.vpy)</span><textarea spellcheck="false" aria-label="Authoring script (.vpy)">import vapoursynth as vs
 
 clip = vs.core.std.BlankClip(width=320, height=180, format=vs.RGB24, color=[32.0, 96.0, 224.0])
 clip = vs.core.std.Invert(clip)
-clip.set_output()</textarea>
-          </label>
-          <footer class="action-bar">
-            <button class="run-button" type="button" disabled aria-keyshortcuts="Control+Enter Meta+Enter">
-              <span data-run-label>Run script</span><kbd>Ctrl / ⌘ ↵</kbd>
-            </button>
-            <output class="runtime-status" data-runtime-status data-state="loading" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span data-status-text>Starting worker…</span></output>
-          </footer>
+clip.set_output()</textarea></label>
+          <footer class="source-actions"><button class="run-button" type="button" disabled aria-keyshortcuts="Control+Enter Meta+Enter"><span data-run-label>Run graph</span><kbd>Ctrl / ⌘ ↵</kbd></button><output class="runtime-status" data-runtime-status data-state="loading" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span data-status-text>Starting worker…</span></output></footer>
         </section>
-
-        <details class="diagnostics" aria-label="Runtime diagnostics">
-          <summary>Runtime diagnostics</summary>
-          <div class="diagnostics-toolbar"><button class="diagnostics-clear" type="button">Clear log</button></div>
-          <pre class="diagnostics-log" aria-live="polite"></pre>
-        </details>
-
-        <details class="diagnostics limitations" aria-label="Runtime limitations">
-          <summary>Runtime limitations</summary>
-          <div class="limitations-body">
-            <p><strong>Authoring capabilities:</strong> <code data-authoring-caps>waiting for the runtime…</code></p>
-            <ul>
-              <li>Graph plans: 64 operations, 64 arguments each, 4096 array values, 16 outputs (worker boundary: 256 operations, 64 outputs).</li>
-              <li>One active graph at a time; frames render as RGBA8 only (RGB24 source format).</li>
-              <li>Scripts run synchronously in the Pyodide worker; plan execution is single-threaded.</li>
-            </ul>
-            <p><strong>Deliberately unsupported</strong> (stable errors, never emulated):</p>
-            <ul>
-              <li>Native plugin binaries, dynamic plugin discovery, and non-<code>std</code> namespaces.</li>
-              <li><code>std.Resize</code> (zimg), non-RGB24 pixel formats, video decoding/encoding, WebCodecs.</li>
-              <li>Threaded scheduling, frame properties, and other desktop-only API surfaces.</li>
-            </ul>
-          </div>
-        </details>
       </section>
 
-      <p class="note"><strong>Experimental browser build.</strong> The worker reports unsupported upstream facilities explicitly rather than emulating desktop behavior.</p>
+      <details class="diagnostics" aria-label="Runtime diagnostics"><summary>Runtime diagnostics</summary><div class="diagnostics-toolbar"><button class="diagnostics-clear" type="button">Clear log</button></div><pre class="diagnostics-log" aria-live="polite"></pre></details>
+      <details class="diagnostics limitations" aria-label="Runtime limitations"><summary>Runtime boundaries</summary><div class="limitations-body"><p><strong>Authoring capabilities:</strong> <code data-authoring-caps>waiting for the runtime…</code></p><p>The library is a documented standard-core reference. Entries marked <strong>vector</strong> have browser render-vector coverage; every other entry must be authored with valid arguments and is verified by the upstream core only when it runs.</p><ul><li>One active graph at a time; program preview is RGBA8.</li><li>Graph plans permit 64 operations, 64 arguments each, and 16 outputs.</li><li>Native plugins and browser media decoding are not provided.</li></ul></div></details>
+      <footer class="footer"><span>Browser core linked</span><span>Blueprint view · 1:1</span><span>Keyboard: Ctrl / ⌘ + Enter runs graph</span></footer>
     </main>
     <script type="module" src="./demo.mjs"></script>
   </body>

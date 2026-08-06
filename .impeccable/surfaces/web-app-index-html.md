@@ -11,7 +11,7 @@ Operate-mode browser authoring workspace at `web/app/index.html` with behavior i
 
 ## Audience and task
 
-Video script authors experiment with a small supported VapourSynth graph, adjust graph parameters, run it, inspect program output, and understand runtime state.
+Video script authors browse the documented standard-core catalog, author or inspect a graph, run it, inspect program output, and understand runtime state.
 
 ## Constraints
 
@@ -19,12 +19,12 @@ Preserve upstream-backed rendering, explicit unsupported failures, keyboard-firs
 
 ## Direction
 
-Broadcast Vision Mixer: Program monitor, Source → Invert → Program Output signal bus, contextual inspector, and script record. Signal amber indicates the active route; graphite surfaces and code are technical records.
+Blueprint Graph: a drafting-sheet authoring workspace with deep blueprint blue, paper-white construction lines, cyan graph routes, and orange-red output/error marks. The standard-core catalog is left, the plotted graph is central, the contextual inspector is right, and the Python source record anchors the bottom edge. Composition A at `.impeccable/mocks/blueprint-graph-canvas.png` was approved on 2026-08-07.
 
 ## Memorable moment
 
-Changing a source dimension visibly changes the selected routing state, regenerates the runnable script, and marks the Program monitor as awaiting the next run.
+Searching the full standard-core catalog and selecting an entry turns it into a contextual node-inspector reference while the authored Python calls visibly plot as a route across the blueprint canvas.
 
 ## Open decisions
 
-Future node types, editable connections, multi-output review, and persisted projects are not implemented.
+Draft-node placement is intentionally planning-only until the user writes the function's valid Python arguments. The upstream core remains the authority for availability, valid arguments, and node kinds at run time.

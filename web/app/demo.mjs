@@ -71,6 +71,7 @@ const diagnostics = createDiagnosticConsole();
 
 let runtimeReady = false;
 let rendering = false;
+let renderRevision = 0;
 let graphState = "ready";
 let selectedLibraryFunction = "BlankClip";
 let libraryKind = "all";
@@ -84,6 +85,11 @@ let contextMenuTarget = null;
 let contextMenuActions = [];
 let wireDrag = null;
 let suppressNextNodeClick = false;
+let playbackTimer = null;
+let playbackSeek = null;
+let playbackSeekRunning = false;
+let playbackEpoch = 0;
+const playback = { outputIndex: 0, frame: 0, numFrames: 1, fpsNum: 0, fpsDen: 1, lastFrameDuration: undefined, playing: false };
 
 window.addEventListener("error", (event) => diagnostics.error("window", event.message || "Unhandled browser error", { filename: event.filename, lineno: event.lineno }));
 window.addEventListener("unhandledrejection", (event) => diagnostics.error("promise", event.reason?.message ?? String(event.reason ?? "Unhandled promise rejection")));
@@ -130,8 +136,8 @@ function parseScript() {
 function renderGraph() {
   const parsed = parseScript();
   graphCount.textContent = String(parsed.length).padStart(2, "0");
-  if (parsed[0]?.kind === "empty") { graphNodesTarget.innerHTML = '<p class="node-empty">Drop a library function here, or author a <code>vs.core.namespace.Function(…)</code> call, to plot it. The library remains available while the source record is empty.</p>'; renderMinimap([]); return; }
-  const positions = parsed.map((_, index) => nodePositions.get(index) ?? { left: 8 + index * (55 / Math.max(1, parsed.length - 1)), top: 29 + (index % 2 ? 22 : 0) });
+  if (parsed[0]?.kind === "empty") { graphNodesTarget.innerHTML = '<p class="node-empty">Drop a library function here, or author a <code>vs.core.namespace.Function(…)</code> call, to plot it. The library remains available while the source record is empty.'; renderMinimap([]); return; }
+  const positions = parsed.map((node, index) => nodePositions.get(index) ?? { left: 8 + index * (55 / Math.max(1, parsed.length - 1)), top: node.name === "Output" ? 7 : 29 + (index % 2 ? 22 : 0) });
   const wirePaths = parsed.slice(1).map((node, index) => {
     const start = positions[index]; const end = positions[index + 1];
     const wireClass = [node.kind === "output" ? "is-output" : "", node.kind === "draft" ? "is-draft" : ""].filter(Boolean).join(" ");
@@ -146,14 +152,20 @@ function renderGraph() {
     const draftClass = node.kind === "draft" ? " is-draft" : "";
     const body = node.kind === "draft"
       ? `<div class="node-row"><span>input</span><strong>clip</strong></div><div class="node-row"><span>state</span><strong>reference</strong></div>`
-      : node.name === "BlankClip" ? `<div class="node-row"><span>width</span><strong>${dimensions.width}</strong></div><div class="node-row"><span>height</span><strong>${dimensions.height}</strong></div><div class="node-row"><span>format</span><strong>RGB24</strong></div>` : node.name === "Output" ? `<div class="node-row"><span>index</span><strong>0</strong></div><div class="node-row"><span>preview</span><strong>RGBA8</strong></div>` : `<div class="node-row"><span>input</span><strong>clip</strong></div><div class="node-row"><span>result</span><strong>node</strong></div>`;
-    const content = node.name === "Output" ? `<div class="graph-node-header"><span class="node-mark"></span>${info.title}<span class="node-namespace">output 0</span></div><canvas width="320" height="180" aria-label="Rendered VapourSynth frame"></canvas><div class="node-body"><span>worker preview</span><span data-output-state>awaiting render</span></div>` : `<div class="graph-node-header"><span class="node-mark"></span>${info.title}<span class="node-namespace">${node.namespace}</span></div><div class="node-body">${body}</div>`;
-    return `<button class="graph-node ${node.name === "Output" ? "program-node" : ""}${draftClass}" type="button" data-graph-node="${node.name}" data-index="${index}" data-kind="${node.kind}" aria-pressed="${active}" aria-label="${info.title}${node.kind === "draft" ? ", reference draft" : ""}. Drag to move, drag a port to rewire, Delete to remove." style="left:${positions[index].left}%;top:${positions[index].top}%">${index > 0 ? '<span class="node-port in" aria-hidden="true" title="Wire a source here"></span>' : ""}${content}${index < parsed.length - 1 ? '<span class="node-port out" aria-hidden="true" title="Drag to rewire"></span>' : ""}</button>`;
+      : node.name === "BlankClip" ? `<div class="node-row"><span>width</span><strong>${dimensions.width}</strong></div><div class="node-row"><span>height</span><strong>${dimensions.height}</strong></div><div class="node-row"><span>format</span><strong>RGB24</strong></div>` : `<div class="node-row"><span>input</span><strong>clip</strong></div><div class="node-row"><span>result</span><strong>node</strong></div>`;
+    const content = node.name === "Output" ? `<div class="graph-node-header"><span class="node-mark"></span>${info.title}<span class="node-namespace">output 0</span></div><canvas width="320" height="180" aria-label="Rendered VapourSynth frame"></canvas><div class="node-body"><span>worker preview</span><span data-output-state>awaiting render</span></div><div class="playback-controls" data-playback-controls><button class="playback-button" type="button" data-playback-toggle aria-pressed="false" disabled>Play</button><label class="sr-only" for="frame-seek">Frame seek</label><input class="playback-seek" id="frame-seek" type="range" min="0" max="0" value="0" step="1" data-frame-slider disabled aria-describedby="frame-status"><output class="playback-frame-status" id="frame-status" data-frame-status aria-live="polite">Frame 1 / 1</output></div>` : `<div class="graph-node-header"><span class="node-mark"></span>${info.title}<span class="node-namespace">${node.namespace}</span></div><div class="node-body">${body}</div>`;
+    const tag = node.name === "Output" ? "div" : "button";
+    const nodeAttributes = node.name === "Output" ? 'role="group" aria-pressed="' + active + '"' : 'type="button" aria-pressed="' + active + '"';
+    return `<${tag} class="graph-node ${node.name === "Output" ? "program-node" : ""}${draftClass}" ${nodeAttributes} data-graph-node="${node.name}" data-index="${index}" data-kind="${node.kind}" aria-label="${info.title}${node.kind === "draft" ? ", reference draft" : ""}. Drag to move, drag a port to rewire, Delete to remove." style="left:${positions[index].left}%;top:${positions[index].top}%">${index > 0 ? '<span class="node-port in" aria-hidden="true" title="Wire a source here"></span>' : ""}${content}${index < parsed.length - 1 ? '<span class="node-port out" aria-hidden="true" title="Drag to rewire"></span>' : ""}</${tag}>`;
   }).join("");
   graphNodesTarget.innerHTML = `<svg class="graph-wires" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="wire-arrow" viewBox="0 0 1 1" refX="0.62" refY="0.5" markerWidth="0.9" markerHeight="0.9" markerUnits="userSpaceOnUse" orient="auto"><path d="M 0 0 L 1 0.5 L 0 1 z" fill="var(--draft)"/></marker><marker id="wire-arrow-output" viewBox="0 0 1 1" refX="0.62" refY="0.5" markerWidth="0.9" markerHeight="0.9" markerUnits="userSpaceOnUse" orient="auto"><path d="M 0 0 L 1 0.5 L 0 1 z" fill="var(--signal)"/></marker></defs>${wirePaths}</svg>${nodes}`;
   graphNodesTarget.querySelectorAll("[data-graph-node]").forEach((node) => {
     const index = Number(node.dataset.index);
-    node.addEventListener("click", () => { if (suppressNextNodeClick) { suppressNextNodeClick = false; return; } selectFunction(node.dataset.graphNode, { index }); });
+    node.addEventListener("click", (event) => {
+      if (event.target.closest(".playback-controls")) return;
+      if (suppressNextNodeClick) { suppressNextNodeClick = false; return; }
+      selectFunction(node.dataset.graphNode, { index });
+    });
     attachNodeDrag(node, index);
   });
   renderMinimap(parsed);
@@ -161,14 +173,13 @@ function renderGraph() {
   if (!nextCanvas) return;
   if (canvas && canvas !== nextCanvas) nextCanvas.replaceWith(canvas);
   else canvas = nextCanvas;
+  bindPlaybackControls();
 }
 
 function attachNodeDrag(nodeEl, index) {
   nodeEl.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || event.target.closest(".node-port")) return;
-    event.preventDefault();
-    const panel = graphNodesTarget;
-    const panelRect = panel.getBoundingClientRect();
+    if (event.button !== 0 || event.target.closest(".node-port, .playback-controls")) return;
+    const panelRect = graphNodesTarget.getBoundingClientRect();
     const nodeRect = nodeEl.getBoundingClientRect();
     const widthPct = (nodeRect.width / panelRect.width) * 100;
     const heightPct = (nodeRect.height / panelRect.height) * 100;
@@ -376,10 +387,145 @@ function clampDimension(control, fallback) { const value = Number.parseInt(contr
 function markChanged(message = "CHANGED") { setGraphState("changed", message); }
 function touchSource(message) { markChanged(message); renderGraph(); clearStalePreview(); }
 function clearStalePreview() {
-  if (!rendered || renderedSource === source.value) return;
+  if (renderedSource === source.value && rendered) return;
+  cancelPlayback();
+  renderRevision += 1;
   rendered = false;
+  playback.frame = 0;
+  playback.numFrames = 1;
   if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
   document.querySelectorAll("[data-output-state]").forEach((target) => { target.textContent = "awaiting render"; target.dataset.state = "changed"; });
+  updatePlaybackControls();
+}
+function cancelPlayback() {
+  renderRevision += 1;
+  playbackEpoch += 1;
+  playback.playing = false;
+  playbackSeek = null;
+  if (playbackTimer !== null) { clearTimeout(playbackTimer); playbackTimer = null; }
+  updatePlaybackControls();
+}
+function configurePlayback(output) {
+  playback.outputIndex = output.index;
+  playback.frame = 0;
+  playback.numFrames = Math.max(1, Number.isSafeInteger(output.numFrames) ? output.numFrames : 1);
+  playback.fpsNum = Number.isFinite(output.fpsNum) ? output.fpsNum : 0;
+  playback.fpsDen = Number.isFinite(output.fpsDen) && output.fpsDen > 0 ? output.fpsDen : 1;
+  playback.lastFrameDuration = undefined;
+}
+function frameStatus() { return `Frame ${playback.frame + 1} / ${playback.numFrames}`; }
+function updatePlaybackControls() {
+  const enabled = rendered && playback.numFrames > 1;
+  document.querySelectorAll("[data-playback-toggle]").forEach((button) => {
+    button.disabled = !enabled;
+    button.textContent = playback.playing ? "Pause" : "Play";
+    button.setAttribute("aria-pressed", String(playback.playing));
+  });
+  document.querySelectorAll("[data-frame-slider]").forEach((slider) => {
+    slider.max = String(Math.max(0, playback.numFrames - 1));
+    slider.value = String(playback.frame);
+    slider.disabled = !enabled;
+  });
+  document.querySelectorAll("[data-frame-status]").forEach((target) => { target.textContent = frameStatus(); });
+}
+function reportPlaybackError(error, revision, epoch = playbackEpoch) {
+  if (revision !== renderRevision || epoch !== playbackEpoch) return;
+  cancelPlayback();
+  const message = `${error?.code ?? "error"}: ${error?.message ?? String(error)}`;
+  diagnostics.error("playback", message, error?.stack);
+  setStatus(message, "error");
+  setGraphState("error", "PLAYBACK FAILED");
+}
+function queuePlaybackSeek(frame, revision) {
+  playbackSeek = { frame, revision, epoch: playbackEpoch };
+  if (playbackSeekRunning) return;
+  playbackSeekRunning = true;
+  void (async () => {
+    try {
+      while (playbackSeek) {
+        const request = playbackSeek;
+        playbackSeek = null;
+        try {
+          await renderPlaybackFrame(request.frame, request.revision, request.epoch);
+        } catch (error) {
+          reportPlaybackError(error, request.revision, request.epoch);
+        }
+      }
+    } finally {
+      playbackSeekRunning = false;
+      if (playbackSeek) queuePlaybackSeek(playbackSeek.frame, playbackSeek.revision);
+    }
+  })();
+}
+function bindPlaybackControls() {
+  updatePlaybackControls();
+  document.querySelectorAll("[data-playback-toggle]").forEach((button) => button.addEventListener("click", () => {
+    if (playback.playing) cancelPlayback(); else startPlayback();
+  }));
+  document.querySelectorAll("[data-frame-slider]").forEach((slider) => slider.addEventListener("input", () => {
+    const frame = Number(slider.value);
+    cancelPlayback();
+    queuePlaybackSeek(frame, renderRevision);
+  }));
+}
+async function renderPlaybackFrame(frameNumber, revision, epoch = playbackEpoch) {
+  const frame = clamp(Math.trunc(frameNumber), 0, playback.numFrames - 1);
+  const renderedFrame = await client.renderOutput(playback.outputIndex, frame);
+  if (revision !== renderRevision || epoch !== playbackEpoch || !rendered || renderedSource !== source.value) return false;
+  drawRgbaFrame(canvas, renderedFrame);
+  playback.frame = frame;
+  playback.lastFrameDuration = renderedFrame.duration;
+  setStatus(`Rendered ${renderedFrame.width}×${renderedFrame.height} RGBA8 · ${frameStatus()}`, "ready");
+  setGraphState("ready", `RENDERED ${renderedFrame.width}×${renderedFrame.height}`);
+  document.querySelectorAll("[data-output-state]").forEach((target) => { target.textContent = `${renderedFrame.width}×${renderedFrame.height}`; target.dataset.state = "ready"; });
+  updatePlaybackControls();
+  return renderedFrame;
+}
+function startPlayback() {
+  if (!rendered || playback.numFrames < 2) return;
+  playbackEpoch += 1;
+  playbackSeek = null;
+  playback.playing = true;
+  const epoch = playbackEpoch;
+  const revision = renderRevision;
+  const defaultFrameDelay = Math.max(1, Math.round(1000 / (playback.fpsNum > 0 ? playback.fpsNum / playback.fpsDen : 24)));
+  const scheduleNext = (frame) => {
+    if (!playback.playing || revision !== renderRevision || epoch !== playbackEpoch) return;
+    const duration = Number(frame?.duration ?? playback.lastFrameDuration);
+    const frameDelay = Number.isSafeInteger(duration) && duration >= 0
+      ? Math.max(1, Math.round(duration / 1000))
+      : defaultFrameDelay;
+    playbackTimer = setTimeout(advance, frameDelay);
+  };
+  const advance = async () => {
+    playbackTimer = null;
+    if (!playback.playing || revision !== renderRevision || epoch !== playbackEpoch) return;
+    const next = playback.frame + 1;
+    if (next >= playback.numFrames) {
+      playback.playing = false;
+      updatePlaybackControls();
+      return;
+    }
+    try {
+      const frame = await renderPlaybackFrame(next, revision, epoch);
+      if (frame) scheduleNext(frame);
+    } catch (error) {
+      reportPlaybackError(error, revision, epoch);
+    }
+  };
+  updatePlaybackControls();
+  if (playback.frame >= playback.numFrames - 1) {
+    void (async () => {
+      try {
+        const frame = await renderPlaybackFrame(0, revision, epoch);
+        if (frame) scheduleNext(frame);
+      } catch (error) {
+        reportPlaybackError(error, revision, epoch);
+      }
+    })();
+  } else {
+    scheduleNext();
+  }
 }
 function updateAddGraphControl() {
   if (!addGraphButton) return;
@@ -399,16 +545,26 @@ async function refreshStatus() {
 
 async function renderScript() {
   if (!runtimeReady || rendering) return;
+  cancelPlayback();
+  const revision = renderRevision;
+  const scriptAtStart = source.value;
   rendering = true; setStatus("Executing editor.vpy…", "rendering"); setGraphState("rendering", "RENDERING"); updateRunControl();
   try {
-    const scriptAtStart = source.value; const { outputs } = await client.runScript(scriptAtStart, "editor.vpy");
-    const output = outputs.find(({ index }) => index === 0); if (!output) throw new Error("the script did not register output 0 with clip.set_output()");
-    const frame = await client.renderOutput(output.index); drawRgbaFrame(canvas, frame);
+    const { outputs } = await client.runScript(scriptAtStart, "editor.vpy");
+    if (revision !== renderRevision || scriptAtStart !== source.value) return;
+    const output = outputs.find(({ index }) => index === 0);
+    if (!output) throw new Error("the script did not register output 0 with clip.set_output()");
+    configurePlayback(output);
     rendered = true; renderedSource = scriptAtStart;
-    setStatus(`Rendered ${frame.width}×${frame.height} RGBA8`, "ready"); setGraphState("ready", `RENDERED ${frame.width}×${frame.height}`);
-    document.querySelectorAll("[data-output-state]").forEach((target) => { target.textContent = `${frame.width}×${frame.height}`; target.dataset.state = "ready"; });
-  } catch (error) { const message = `${error.code ?? "error"}: ${error.message}`; diagnostics.error("render", message, error.stack); setStatus(message, "error"); setGraphState("error", "RENDER FAILED"); clearStalePreview(); }
-  finally { rendering = false; updateRunControl(); }
+    if (!await renderPlaybackFrame(0, revision)) return;
+  } catch (error) {
+    if (revision !== renderRevision || scriptAtStart !== source.value) return;
+    const message = `${error.code ?? "error"}: ${error.message}`;
+    diagnostics.error("render", message, error.stack);
+    rendered = false; renderedSource = ""; clearStalePreview();
+    setStatus(message, "error");
+    setGraphState("error", "RENDER FAILED");
+  } finally { rendering = false; updateRunControl(); }
 }
 
 run.addEventListener("click", renderScript);
@@ -648,7 +804,7 @@ graphNodesTarget.addEventListener("mouseout", (event) => {
 });
 
 renderLibrary(); selectFunction("BlankClip", { fromLibrary: true });
-window.addEventListener("pagehide", () => client.close(), { once: true });
+window.addEventListener("pagehide", () => { cancelPlayback(); client.close(); }, { once: true });
 refreshStatus().catch((error) => { runtimeReady = false; diagnostics.error("startup", error.message, error.stack); setStatus(`startup-error: ${error.message}`, "error"); updateRunControl(); });
 
 function createDiagnosticConsole() {

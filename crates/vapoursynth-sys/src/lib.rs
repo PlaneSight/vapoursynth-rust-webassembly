@@ -129,6 +129,42 @@ pub mod browser {
             out_frame_generation: *mut u32,
         ) -> Status;
 
+        /// Returns video metadata for an opaque node token.
+        pub fn vs_browser_node_video_info(
+            node_slot: u32,
+            node_generation: u32,
+            out_width: *mut u32,
+            out_height: *mut u32,
+            out_num_frames: *mut u32,
+            out_fps_num: *mut i64,
+            out_fps_den: *mut i64,
+        ) -> Status;
+
+        /// Creates a C++-owned RGB24 source node.
+        pub fn vs_browser_source_create(
+            core_slot: u32,
+            core_generation: u32,
+            width: u32,
+            height: u32,
+            num_frames: u32,
+            fps_num: i64,
+            fps_den: i64,
+            out_node_slot: *mut u32,
+            out_node_generation: *mut u32,
+        ) -> Status;
+
+        /// Uploads one tightly packed RGBA8 frame into a source node.
+        pub fn vs_browser_source_upload_rgba(
+            node_slot: u32,
+            node_generation: u32,
+            frame_number: u32,
+            rgba: *const u8,
+            rgba_size: u32,
+            duration_num: i64,
+            duration_den: i64,
+            absolute_time: f64,
+        ) -> Status;
+
         /// Releases an opaque node token.
         pub fn vs_browser_node_release(slot: u32, generation: u32) -> Status;
 
@@ -157,6 +193,16 @@ pub mod browser {
 
         /// Releases an opaque frame token.
         pub fn vs_browser_frame_release(slot: u32, generation: u32) -> Status;
+
+        /// Returns optional timing metadata for an opaque frame token.
+        pub fn vs_browser_frame_timing(
+            frame_slot: u32,
+            frame_generation: u32,
+            out_duration_num: *mut i64,
+            out_duration_den: *mut i64,
+            out_absolute_time: *mut f64,
+            out_flags: *mut u32,
+        ) -> Status;
     }
 }
 

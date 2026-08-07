@@ -72,8 +72,13 @@ export class PyodideWorkerClient {
     return this.#request("runScript", { source, filename }, this.#scriptTimeoutMs);
   }
 
-  renderOutput(index, frame = 0) {
-    return this.#request("renderOutput", { index, frame });
+  renderOutput(index, frame = 0, options = {}) {
+    const payload = { index, frame };
+    const normalized = normalizeRenderOptions(options);
+    if (normalized) {
+      Object.assign(payload, normalized);
+    }
+    return this.#request("renderOutput", payload);
   }
 
   close() {
@@ -217,4 +222,22 @@ export class PyodideWorkerClient {
     this.#diagnostic("info", "worker", "Pyodide worker ready");
     this.#resolveReady();
   }
+}
+function normalizeRenderOptions(options) {
+  if (options === undefined || options === null || (typeof options === "object" && Object.keys(options).length === 0)) {
+    return undefined;
+  }
+  if (typeof options === "string") {
+    return { transport: options };
+  }
+  if (typeof options !== "object" || Array.isArray(options)) {
+    return { transport: options };
+  }
+  const normalized = {};
+  for (const key of ["transport", "timestamp", "duration"]) {
+    if (Object.hasOwn(options, key) && options[key] !== undefined) {
+      normalized[key] = options[key];
+    }
+  }
+  return normalized;
 }

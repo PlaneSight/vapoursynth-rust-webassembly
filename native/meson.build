@@ -235,7 +235,7 @@ browser_module_link_args = [
     '-sEXPORT_ES6=1',
     '-sMODULARIZE=1',
     '-sINITIAL_MEMORY=67108864',
-    '-sEXPORTED_FUNCTIONS=["_malloc","_free","_vs_rust_core_create","_vs_rust_core_release","_vs_rust_core_invoke","_vs_rust_node_get_frame","_vs_rust_node_release","_vs_rust_frame_dimensions","_vs_rust_frame_rgba8_size","_vs_rust_frame_copy_rgba8","_vs_rust_frame_release"]',
+    '-sEXPORTED_FUNCTIONS=["_malloc","_free","_vs_rust_core_create","_vs_rust_core_release","_vs_rust_core_invoke","_vs_rust_node_get_frame","_vs_rust_node_video_info","_vs_rust_source_create","_vs_rust_source_upload_rgba","_vs_rust_node_release","_vs_rust_frame_dimensions","_vs_rust_frame_rgba8_size","_vs_rust_frame_copy_rgba8","_vs_rust_frame_timing","_vs_rust_frame_release"]',
 ]
 
 browser_module = executable(

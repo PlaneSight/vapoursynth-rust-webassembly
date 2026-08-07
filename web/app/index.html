@@ -163,6 +163,12 @@
       .program-node { width: min(19rem, 34%); }
       .program-node canvas { display: block; width: 100%; min-height: 5rem; max-height: 9.5rem; background: var(--ink-950); image-rendering: pixelated; }
       .program-node .node-body { display: grid; grid-template-columns: repeat(2, 1fr); gap: .35rem; }
+      .playback-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .35rem .45rem; padding: .45rem .55rem; border-top: 1px solid var(--line); background: var(--panel-wash); }
+      .playback-button { min-height: 1.8rem; border: 1px solid var(--line); padding: 0 .45rem; background: transparent; color: var(--draft); cursor: pointer; font-size: .58rem; letter-spacing: .05em; text-transform: uppercase; }
+      .playback-button:not(:disabled):hover { border-color: var(--draft); background: var(--draft-dim); }
+      .playback-button:disabled, .playback-seek:disabled { cursor: not-allowed; opacity: .48; }
+      .playback-seek { width: 100%; accent-color: var(--signal); }
+      .playback-frame-status { grid-column: 1 / -1; color: var(--paper-muted); font-size: .56rem; letter-spacing: .04em; }
       .node-empty { position: absolute; left: 50%; top: 50%; width: min(28rem, 70%); color: var(--paper-muted); font-size: .72rem; line-height: 1.6; text-align: center; transform: translate(-50%, -50%); }
       .minimap { position: absolute; right: 1rem; bottom: 1rem; width: 8.8rem; height: 5.2rem; border: 1px solid var(--line); padding: .4rem; background: var(--ruler-wash); }
       .minimap svg { width: 100%; height: 100%; fill: none; stroke: var(--paper-muted); stroke-width: 1.3; }

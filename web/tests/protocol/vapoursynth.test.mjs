@@ -3,8 +3,7 @@ import test from "node:test";
 
 import { AuthoringSession } from "../../runtime/vapoursynth/session.mjs";
 import { createWorkerHandler } from "../../protocol/vapoursynth.mjs";
-
-const RGB24_FORMAT_ID = 2_000_010;
+const RGB24_FORMAT_ID = 537_395_200;
 
 const PLAN = {
   version: 1,
@@ -169,6 +168,82 @@ test("returns frame bytes as a transferable ArrayBuffer", async () => {
   assert.ok(response.message.payload.rgba instanceof ArrayBuffer);
   assert.equal(response.message.payload.rgba.byteLength, 320 * 180 * 4);
   assert.deepEqual(response.transfer, [response.message.payload.rgba]);
+});
+
+test("derives exact constant-rate timing for VideoFrame output", async () => {
+  const previousVideoFrame = globalThis.VideoFrame;
+  const timing = [];
+  let rgbaTiming;
+  globalThis.VideoFrame = class {
+    constructor(_rgba, options) {
+      timing.push(options);
+    }
+  };
+  try {
+    const handle = createWorkerHandler(fakeSession({
+      render_output() {
+        return {
+          width: 1,
+          height: 1,
+          rgba: new Uint8Array(4),
+          fpsNum: 24,
+          fpsDen: 1,
+        };
+      },
+    }));
+    await handle({ requestId: 14, type: "renderOutput", index: 0, frame: 1, transport: "video-frame" });
+    await handle({ requestId: 15, type: "renderOutput", index: 0, frame: 2, transport: "video-frame" });
+    const rgbaResponse = await handle({ requestId: 16, type: "renderOutput", index: 0, frame: 1 });
+    rgbaTiming = rgbaResponse.message.payload;
+  } finally {
+    if (previousVideoFrame === undefined) {
+      delete globalThis.VideoFrame;
+    } else {
+      globalThis.VideoFrame = previousVideoFrame;
+    }
+  }
+  assert.deepEqual(timing.map(({ timestamp, duration }) => ({ timestamp, duration })), [
+    { timestamp: 41667, duration: 41667 },
+    { timestamp: 83333, duration: 41667 },
+  ]);
+  assert.deepEqual(
+    {
+      timestamp: rgbaTiming.timestamp,
+      duration: rgbaTiming.duration,
+      timestampKnown: rgbaTiming.timestampKnown,
+      durationKnown: rgbaTiming.durationKnown,
+    },
+    { timestamp: 41667, duration: 41667, timestampKnown: true, durationKnown: true },
+  );
+});
+
+test("does not mark an unsafe absolute timestamp as known", async () => {
+  const previousVideoFrame = globalThis.VideoFrame;
+  globalThis.VideoFrame = class {
+    constructor() {}
+  };
+  try {
+    const handle = createWorkerHandler(fakeSession({
+      render_output() {
+        return {
+          width: 1,
+          height: 1,
+          rgba: new Uint8Array(4),
+          flags: 2,
+          absoluteTime: 1e13,
+        };
+      },
+    }));
+    const response = await handle({ requestId: 17, type: "renderOutput", index: 0, frame: 0, transport: "video-frame" });
+    assert.equal(response.message.payload.timestamp, 0);
+    assert.equal(response.message.payload.timestampKnown, false);
+  } finally {
+    if (previousVideoFrame === undefined) {
+      delete globalThis.VideoFrame;
+    } else {
+      globalThis.VideoFrame = previousVideoFrame;
+    }
+  }
 });
 
 test("normalizes structured wasm errors", async () => {

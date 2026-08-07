@@ -6,6 +6,8 @@ const MAX_ARGUMENTS = 64;
 const MAX_ARRAY_VALUES = 4096;
 const MAX_NAME_LENGTH = 64;
 const MAX_DATA_LENGTH = 65_536;
+const DEFAULT_FORMAT = "RGB24";
+const MICROSECONDS_PER_SECOND = 1_000_000;
 
 export const BROWSER_AUTHORING_CAPABILITIES = Object.freeze({
   planVersion: 1,
@@ -107,16 +109,24 @@ export class AuthoringSession {
       const outputs = [];
       for (const output of plan.outputs) {
         const nodeToken = this.#requireNode(requestId, output.node);
-        const frameToken = this.#runtime.node_get_frame(requestId, nodeToken, 0);
-        let width;
-        let height;
-        try {
-          ({ width, height } = this.#runtime.frame_dimensions(requestId, frameToken));
-        } finally {
-          this.#runtime.frame_release(requestId, frameToken);
+        const metadata = readNodeMetadata(this.#runtime, requestId, nodeToken);
+        let outputMetadata;
+        if (metadata) {
+          outputMetadata = { node: output.node, ...metadata };
+        } else {
+          const frameToken = this.#runtime.node_get_frame(requestId, nodeToken, 0);
+          let width;
+          let height;
+          try {
+            ({ width, height } = this.#runtime.frame_dimensions(requestId, frameToken));
+          } finally {
+            this.#runtime.frame_release(requestId, frameToken);
+          }
+          outputMetadata = { node: output.node, width, height };
         }
-        this.#outputs.set(output.index, { node: output.node, width, height });
-        outputs.push({ index: output.index, width, height });
+        this.#outputs.set(output.index, outputMetadata);
+        const { node: _node, ...publicMetadata } = outputMetadata;
+        outputs.push({ index: output.index, ...publicMetadata });
       }
       return { outputs };
     } catch (error) {
@@ -125,13 +135,17 @@ export class AuthoringSession {
     }
   }
 
-  render_output(requestId, index, frame) {
+  render_output(requestId, index, frame, transport = "rgba8") {
     this.#assertOpen(requestId);
     requireOutputIndex(index, requestId);
     requireFrameIndex(frame, requestId);
+    requireTransport(transport, requestId);
     const output = this.#outputs.get(index);
     if (!output) {
       throw sessionError(requestId, "missing-output", `no output is registered at index ${index}`);
+    }
+    if (output.numFrames !== undefined && frame >= output.numFrames) {
+      throw sessionError(requestId, "invalid-frame", `frame ${frame} is outside output range`);
     }
 
     const nodeToken = this.#requireNode(requestId, output.node);
@@ -139,7 +153,8 @@ export class AuthoringSession {
     try {
       const { width, height } = this.#runtime.frame_dimensions(requestId, frameToken);
       const rgba = this.#runtime.frame_copy_rgba8(requestId, frameToken);
-      return { width, height, rgba };
+      const timing = readFrameTiming(this.#runtime, requestId, frameToken, output, frame);
+      return timing ? { width, height, rgba, ...timing } : { width, height, rgba };
     } finally {
       this.#runtime.frame_release(requestId, frameToken);
     }
@@ -192,6 +207,143 @@ export class AuthoringSession {
     if (this.#closed) {
       throw sessionError(requestId, "runtime-closed", "the VapourSynth authoring runtime is closed");
     }
+  }
+}
+
+function readNodeMetadata(runtime, requestId, nodeToken) {
+  if (typeof runtime.node_video_info !== "function") {
+    return undefined;
+  }
+  const info = runtime.node_video_info(requestId, nodeToken);
+  if (info === undefined) {
+    return undefined;
+  }
+  if (!info || typeof info !== "object" || Array.isArray(info)) {
+    throw sessionError(requestId, "runtime-protocol", "runtime returned invalid video-node metadata");
+  }
+
+  const width = requireMetadataDimension(info.width, requestId, "video width");
+  const height = requireMetadataDimension(info.height, requestId, "video height");
+  const numFrames = requireMetadataCount(info.numFrames, requestId, "video frame count");
+  const fpsNum = requireMetadataInteger(info.fpsNum, requestId, "video fps numerator");
+  const fpsDen = requireMetadataInteger(info.fpsDen, requestId, "video fps denominator");
+  if ((fpsNum === 0) !== (fpsDen === 0) || fpsNum < 0 || fpsDen < 0) {
+    throw sessionError(requestId, "runtime-protocol", "video frame rate must be positive or zero for variable-rate video");
+  }
+
+  return {
+    width,
+    height,
+    numFrames,
+    fpsNum,
+    fpsDen,
+    format: DEFAULT_FORMAT,
+  };
+}
+
+function readFrameTiming(runtime, requestId, frameToken, output, frameNumber) {
+  if (typeof runtime.frame_timing !== "function") {
+    return undefined;
+  }
+  const timing = runtime.frame_timing(requestId, frameToken);
+  if (timing === undefined) {
+    return undefined;
+  }
+  if (!timing || typeof timing !== "object" || Array.isArray(timing)) {
+    throw sessionError(requestId, "runtime-protocol", "runtime returned invalid frame timing");
+  }
+
+  const flags = requireMetadataInteger(
+    timing.flags ?? ((timing.durationNum !== undefined ? 1 : 0) | (timing.absoluteTime !== undefined && timing.absoluteTime !== null ? 2 : 0)),
+    requestId,
+    "frame timing flags",
+  );
+  const result = { flags };
+  if (timing.durationNum !== undefined) {
+    result.durationNum = requireMetadataInteger(timing.durationNum, requestId, "frame duration numerator");
+  }
+  if (timing.durationDen !== undefined) {
+    result.durationDen = requireMetadataInteger(timing.durationDen, requestId, "frame duration denominator");
+  }
+  if (timing.absoluteTime !== undefined && timing.absoluteTime !== null) {
+    const absoluteTime = Number(timing.absoluteTime);
+    if (!Number.isFinite(absoluteTime)) {
+      throw sessionError(requestId, "runtime-protocol", "frame absolute time must be finite");
+    }
+    result.absoluteTime = absoluteTime;
+  }
+  if (output.fpsNum !== undefined) {
+    result.fpsNum = output.fpsNum;
+    result.fpsDen = output.fpsDen;
+  }
+  const hasDuration = (flags & 1) !== 0;
+  const hasAbsoluteTime = (flags & 2) !== 0;
+  let duration = hasDuration
+    ? rationalMicroseconds(result.durationNum, result.durationDen)
+    : undefined;
+  const hasConstantRate = output.fpsNum > 0 && output.fpsDen > 0;
+  if (duration === undefined && hasConstantRate) {
+    duration = rationalMicroseconds(output.fpsDen, output.fpsNum);
+  }
+  let timestamp;
+  if (hasAbsoluteTime && result.absoluteTime !== undefined) {
+    timestamp = Math.round(result.absoluteTime * MICROSECONDS_PER_SECOND);
+  } else if (hasConstantRate) {
+    timestamp = frameTimestamp(frameNumber, output.fpsDen, output.fpsNum);
+  }
+  if (duration !== undefined) {
+    result.duration = duration;
+  }
+  if (timestamp !== undefined && Number.isSafeInteger(timestamp)) {
+    result.timestamp = timestamp;
+  }
+  return result;
+}
+
+function rationalMicroseconds(numerator, denominator) {
+  if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator) || denominator <= 0) {
+    return undefined;
+  }
+  const value = Math.round((numerator * MICROSECONDS_PER_SECOND) / denominator);
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+function frameTimestamp(frameNumber, fpsDen, fpsNum) {
+  if (!Number.isSafeInteger(frameNumber) || frameNumber < 0 ||
+      !Number.isSafeInteger(fpsDen) || fpsDen <= 0 ||
+      !Number.isSafeInteger(fpsNum) || fpsNum <= 0) {
+    return undefined;
+  }
+  const value = (frameNumber * fpsDen * MICROSECONDS_PER_SECOND) / fpsNum;
+  return Number.isFinite(value) && value >= 0 && Number.isSafeInteger(Math.round(value)) ? Math.round(value) : undefined;
+}
+
+function requireMetadataInteger(value, requestId, label) {
+  const converted = typeof value === "bigint" ? Number(value) : value;
+  if (!Number.isSafeInteger(converted)) {
+    throw sessionError(requestId, "runtime-protocol", `${label} must be a safe integer`);
+  }
+  return converted;
+}
+
+function requireMetadataDimension(value, requestId, label) {
+  const converted = requireMetadataInteger(value, requestId, label);
+  if (converted <= 0 || converted > U32_MAX) {
+    throw sessionError(requestId, "runtime-protocol", `${label} must be a non-zero u32`);
+  }
+  return converted;
+}
+
+function requireMetadataCount(value, requestId, label) {
+  const converted = requireMetadataInteger(value, requestId, label);
+  if (converted <= 0 || converted > U32_MAX) {
+    throw sessionError(requestId, "runtime-protocol", `${label} must be a positive u32`);
+  }
+  return converted;
+}
+
+function requireTransport(value, requestId) {
+  if (value !== "rgba8" && value !== "video-frame") {
+    throw sessionError(requestId, "invalid-transport", "transport must be rgba8 or video-frame");
   }
 }
 

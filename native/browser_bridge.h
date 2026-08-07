@@ -129,6 +129,61 @@ VS_BROWSER_EXPORT vs_browser_status vs_browser_node_get_frame(
     uint32_t frame_number,
     uint32_t *out_frame_slot,
     uint32_t *out_frame_generation) VS_BROWSER_NOEXCEPT;
+/// Returns video metadata for a retained node token.
+///
+/// The output fields are zeroed before work begins. `fps_num` and `fps_den`
+/// are both zero for variable-rate video.
+VS_BROWSER_EXPORT vs_browser_status vs_browser_node_video_info(
+    uint32_t node_slot,
+    uint32_t node_generation,
+    uint32_t *out_width,
+    uint32_t *out_height,
+    uint32_t *out_num_frames,
+    int64_t *out_fps_num,
+    int64_t *out_fps_den) VS_BROWSER_NOEXCEPT;
+
+/// Creates a C++-owned RGB24 source node with no upstream dependencies.
+///
+/// A fixed frame rate requires positive `fps_num` and `fps_den`; `0/0`
+/// represents variable frame rate. Frames are populated with
+/// [`vs_browser_source_upload_rgba`].
+VS_BROWSER_EXPORT vs_browser_status vs_browser_source_create(
+    uint32_t core_slot,
+    uint32_t core_generation,
+    uint32_t width,
+    uint32_t height,
+    uint32_t num_frames,
+    int64_t fps_num,
+    int64_t fps_den,
+    uint32_t *out_node_slot,
+    uint32_t *out_node_generation) VS_BROWSER_NOEXCEPT;
+
+/// Uploads one tightly packed RGBA8 frame into a retained source node.
+///
+/// A duration pair of `0/0` removes duration metadata; a NaN
+/// `absolute_time` removes absolute-time metadata.
+VS_BROWSER_EXPORT vs_browser_status vs_browser_source_upload_rgba(
+    uint32_t node_slot,
+    uint32_t node_generation,
+    uint32_t frame_number,
+    const uint8_t *rgba,
+    uint32_t rgba_size,
+    int64_t duration_num,
+    int64_t duration_den,
+    double absolute_time) VS_BROWSER_NOEXCEPT;
+
+/// Returns optional timing metadata for a retained frame token.
+///
+/// Missing timing is valid: all outputs are zeroed and `out_flags` is zero.
+/// Bit 0 of `out_flags` indicates a complete duration pair; bit 1 indicates
+/// an absolute time.
+VS_BROWSER_EXPORT vs_browser_status vs_browser_frame_timing(
+    uint32_t frame_slot,
+    uint32_t frame_generation,
+    int64_t *out_duration_num,
+    int64_t *out_duration_den,
+    double *out_absolute_time,
+    uint32_t *out_flags) VS_BROWSER_NOEXCEPT;
 
 /// Releases a node token.
 VS_BROWSER_EXPORT vs_browser_status vs_browser_node_release(

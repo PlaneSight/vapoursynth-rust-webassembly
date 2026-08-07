@@ -68,6 +68,28 @@ test.describe("blueprint graph interactions", () => {
     await expect(outputState).toHaveAttribute("data-state", "changed");
   });
 
+  test("seeks and plays a bounded multi-frame output", async ({ page }) => {
+    await page.locator("textarea").fill(
+      "import vapoursynth as vs\n\n"
+        + "clip = vs.core.std.BlankClip(width=8, height=6, format=vs.RGB24, color=[32.0, 96.0, 224.0], length=3)\n"
+        + "clip.set_output()\n",
+    );
+    await page.locator(".run-button").click();
+    await expect(page.locator("[data-frame-status]")).toHaveText("Frame 1 / 3", { timeout: 90_000 });
+
+    const slider = page.locator("[data-frame-slider]");
+    await expect(slider).toHaveAttribute("max", "2");
+    await slider.fill("2");
+    await expect(page.locator("[data-frame-status]")).toHaveText("Frame 3 / 3", { timeout: 90_000 });
+
+    await slider.fill("0");
+    await expect(page.locator("[data-frame-status]")).toHaveText("Frame 1 / 3", { timeout: 90_000 });
+    const toggle = page.locator("[data-playback-toggle]");
+    await toggle.click();
+    await expect(page.locator("[data-frame-status]")).toHaveText("Frame 3 / 3", { timeout: 90_000 });
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
   test("right-click menu deletes a node", async ({ page }) => {
     await page.locator('[data-library-function="AddBorders"]').click();
     await page.locator("[data-add-graph]").click();

@@ -14,8 +14,7 @@ const KIND_INT = 1;
 const KIND_FLOAT = 2;
 const KIND_DATA = 3;
 const KIND_NODE = 4;
-
-const RGB24_FORMAT_ID = 2_000_010;
+const RGB24_FORMAT_ID = 537_395_200;
 
 /** Builds an Emscripten-like module whose exports emulate the Rust ABI. */
 function fakeModule(overrides = {}) {

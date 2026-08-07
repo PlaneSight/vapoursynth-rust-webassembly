@@ -62,7 +62,7 @@ The upstream patch set makes these explicit:
 - `getFrameAsync` is not browser-asynchronous behaviour in this build;
 - `std.Resize` is intentionally omitted, so `zimg` is not part of this build.
 
-Frame transport hands an RGBA8 `ArrayBuffer` to the caller on the `postMessage` transfer list, so buffer ownership moves without a copy. Long-term paths should favour `VideoFrame` and WebCodecs rather than round-tripping pixels through Python.
+Frame transport hands RGBA8 `ArrayBuffer`s to the caller on the `postMessage` transfer list, so buffer ownership moves without a worker-to-caller clone. The bounded `renderOutputSequence` helper adds ordered, cancellable frame delivery and optional WebCodecs timing metadata; its `video-frame` transport requires explicit `VideoFrame.close()` ownership. `WebCodecsInputAdapter` accepts RGBA8 buffers or browser `VideoFrame`s and copies them into a C++-owned RGB24 source node. Container demuxing/muxing, audio, and broader pixel-format conversion remain outside this build.
 
 ## Boundary rules
 

@@ -83,11 +83,14 @@ export class PyodideSession {
     return this.#enqueue(() => this.#startScript(source, filename));
   }
 
-  renderOutput(index, frame = 0) {
+  renderOutput(index, frame = 0, options) {
     return this.#enqueue(() => {
       const result = Promise.resolve().then(() => {
         this.#assertReady();
-        return this.#workerClient.renderOutput(index, frame);
+        if (options === undefined) {
+          return this.#workerClient.renderOutput(index, frame);
+        }
+        return this.#workerClient.renderOutput(index, frame, options);
       });
       return { result, settled: result };
     });

@@ -359,6 +359,117 @@ mod emscripten {
         }
     }
 
+    /// Returns video metadata for an opaque node token.
+    ///
+    /// # Safety
+    ///
+    /// All five output pointers must be non-null and writable for the
+    /// duration of the synchronous call.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_node_video_info(
+        node_slot: u32,
+        node_generation: u32,
+        out_width: *mut u32,
+        out_height: *mut u32,
+        out_num_frames: *mut u32,
+        out_fps_num: *mut i64,
+        out_fps_den: *mut i64,
+    ) -> browser::Status {
+        if out_width.is_null()
+            || out_height.is_null()
+            || out_num_frames.is_null()
+            || out_fps_num.is_null()
+            || out_fps_den.is_null()
+        {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: all output pointers were checked non-null and are writable.
+        unsafe {
+            browser::vs_browser_node_video_info(
+                node_slot,
+                node_generation,
+                out_width,
+                out_height,
+                out_num_frames,
+                out_fps_num,
+                out_fps_den,
+            )
+        }
+    }
+
+    /// Creates a C++-owned RGB24 source node.
+    ///
+    /// # Safety
+    ///
+    /// Both output token pointers must be non-null and writable for the
+    /// duration of the synchronous call.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_source_create(
+        core_slot: u32,
+        core_generation: u32,
+        width: u32,
+        height: u32,
+        num_frames: u32,
+        fps_num: i64,
+        fps_den: i64,
+        out_node_slot: *mut u32,
+        out_node_generation: *mut u32,
+    ) -> browser::Status {
+        if out_node_slot.is_null() || out_node_generation.is_null() {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: both output token pointers were checked non-null and are writable.
+        unsafe {
+            browser::vs_browser_source_create(
+                core_slot,
+                core_generation,
+                width,
+                height,
+                num_frames,
+                fps_num,
+                fps_den,
+                out_node_slot,
+                out_node_generation,
+            )
+        }
+    }
+
+    /// Uploads one tightly packed RGBA8 frame into a C++-owned source node.
+    ///
+    /// # Safety
+    ///
+    /// `rgba` must be readable for `rgba_size` bytes for the duration of the
+    /// synchronous call. The C++ bridge copies all bytes it retains.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_source_upload_rgba(
+        node_slot: u32,
+        node_generation: u32,
+        frame_number: u32,
+        rgba: *const u8,
+        rgba_size: u32,
+        duration_num: i64,
+        duration_den: i64,
+        absolute_time: f64,
+    ) -> browser::Status {
+        if rgba.is_null() {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: the caller upholds the readable RGBA8 span for this
+        // synchronous call; C++ validates the byte count and timing values.
+        unsafe {
+            browser::vs_browser_source_upload_rgba(
+                node_slot,
+                node_generation,
+                frame_number,
+                rgba,
+                rgba_size,
+                duration_num,
+                duration_den,
+                absolute_time,
+            )
+        }
+    }
+
     /// Releases an opaque node token through the Rust-prefixed ABI.
     ///
     /// # Safety
@@ -433,6 +544,41 @@ mod emscripten {
         // Safety: the caller upholds the pointer, length, and exclusivity
         // contract documented on this entry point for the synchronous call.
         unsafe { browser::vs_browser_frame_copy_rgba8(slot, generation, rgba, rgba_size) }
+    }
+
+    /// Returns optional timing metadata for an opaque frame token.
+    ///
+    /// # Safety
+    ///
+    /// All four output pointers must be non-null and writable for the
+    /// duration of the synchronous call.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn vs_rust_frame_timing(
+        frame_slot: u32,
+        frame_generation: u32,
+        out_duration_num: *mut i64,
+        out_duration_den: *mut i64,
+        out_absolute_time: *mut f64,
+        out_flags: *mut u32,
+    ) -> browser::Status {
+        if out_duration_num.is_null()
+            || out_duration_den.is_null()
+            || out_absolute_time.is_null()
+            || out_flags.is_null()
+        {
+            return browser::STATUS_INVALID_ARGUMENT;
+        }
+        // Safety: all output pointers were checked non-null and are writable.
+        unsafe {
+            browser::vs_browser_frame_timing(
+                frame_slot,
+                frame_generation,
+                out_duration_num,
+                out_duration_den,
+                out_absolute_time,
+                out_flags,
+            )
+        }
     }
 
     /// Releases an opaque frame token through the Rust-prefixed ABI.

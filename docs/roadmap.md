@@ -16,11 +16,11 @@ The synchronous Python package, two-worker protocol, real-Pyodide integration te
 
 The package exposes `vs.core`, `VideoNode`, format constants, function namespaces, and `set_output()`; unsupported APIs fail immediately with specific errors.
 
-## 4. Multi-frame / WebCodecs
+## 4. Multi-frame / WebCodecs — done
 
-Expose generation-checked clip metadata (`numFrames`, `fpsNum` / `fpsDen`, dimensions, and format), then drive playback and seeking through the existing `render_output(index, frame)` path with bounded queues, backpressure, cancellation, and deterministic frame release. Single-frame RGBA8 `ArrayBuffer` transfer already exists; extend that contract to timed frame sequences and transferable `VideoFrame` output suitable for canvas presentation or `VideoEncoder`.
+The generation-checked runtime exposes clip metadata (`numFrames`, `fpsNum` / `fpsDen`, dimensions, and the supported `RGB24` format) and drives arbitrary frame selection through `render_output(index, frame)`. `renderOutputSequence` provides bounded sequential delivery with cancellation, optional timing metadata, and explicit `VideoFrame.close()` ownership; the existing RGBA8 `ArrayBuffer` transfer remains the canvas path.
 
-WebCodecs input must be a bounded source adapter rather than an asynchronous callback from VapourSynth: decode or receive each browser `VideoFrame` before its synchronous upstream frame request, copy the supported pixel representation into VapourSynth-owned storage, and release both sides explicitly. Start with one conformance-backed format. Container demuxing/muxing, audio, and broader pixel-format conversion are separate work.
+`WebCodecsInputAdapter` creates a C++-owned RGB24 source, copies browser RGBA8 or `VideoFrame` data into VapourSynth-owned frames, stores optional duration/absolute-time properties, and releases the source node deterministically. The browser bridge rejects unsupported formats and oversized source storage. Container demuxing/muxing, audio, and broader pixel-format conversion remain separate work.
 
 ## 5. Cancellation and resource limits — done
 

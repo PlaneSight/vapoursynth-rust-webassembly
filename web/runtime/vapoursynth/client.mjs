@@ -43,8 +43,13 @@ export class WorkerClient {
     return this.#request("executeGraph", { plan });
   }
 
-  renderOutput(index, frame = 0) {
-    return this.#request("renderOutput", { index, frame });
+  renderOutput(index, frame = 0, options = {}) {
+    const payload = { index, frame };
+    const normalized = normalizeRenderOptions(options);
+    if (normalized) {
+      Object.assign(payload, normalized);
+    }
+    return this.#request("renderOutput", payload);
   }
 
   /** Releases every retained node and the active core. */
@@ -141,6 +146,25 @@ export class WorkerClient {
     this.#readyState = "ready";
     this.#resolveReady();
   }
+}
+
+function normalizeRenderOptions(options) {
+  if (options === undefined || options === null || (typeof options === "object" && Object.keys(options).length === 0)) {
+    return undefined;
+  }
+  if (typeof options === "string") {
+    return { transport: options };
+  }
+  if (typeof options !== "object" || Array.isArray(options)) {
+    return { transport: options };
+  }
+  const normalized = {};
+  for (const key of ["transport", "timestamp", "duration"]) {
+    if (Object.hasOwn(options, key) && options[key] !== undefined) {
+      normalized[key] = options[key];
+    }
+  }
+  return normalized;
 }
 
 export function drawRgbaFrame(canvas, frame) {

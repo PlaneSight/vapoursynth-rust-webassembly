@@ -75,6 +75,29 @@ test("maps Python worker requests onto session operations", async () => {
   assert.equal(frame.transfer[0], frame.message.payload.rgba);
 });
 
+test("does not mark an unsafe absolute timestamp as known", async () => {
+  const handle = createPyodideWorkerHandler({
+    async status() {
+      return { schemaVersion: 1 };
+    },
+    async runScript() {
+      return { outputs: [] };
+    },
+    async renderOutput() {
+      return {
+        width: 1,
+        height: 1,
+        rgba: new Uint8Array(4),
+        flags: 2,
+        absoluteTime: 1e13,
+      };
+    },
+  });
+  const response = await handle({ schemaVersion: 1, requestId: 4, type: "renderOutput", index: 0, frame: 0 });
+  assert.equal(response.message.payload.timestamp, undefined);
+  assert.equal(response.message.payload.timestampKnown, undefined);
+});
+
 test("rejects malformed session responses with a stable protocol code", async () => {
   const handle = createPyodideWorkerHandler({
     async status() {

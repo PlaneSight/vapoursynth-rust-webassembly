@@ -14,8 +14,7 @@ import unittest
 
 
 MODULE_PATH = pathlib.Path(__file__).with_name("vapoursynth.py")
-
-RGB24_FORMAT_ID = 2_000_010
+RGB24_FORMAT_ID = 537_395_200
 
 
 class VapourSynthModuleTest(unittest.TestCase):

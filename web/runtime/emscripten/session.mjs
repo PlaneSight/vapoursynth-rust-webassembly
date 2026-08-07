@@ -184,6 +184,118 @@ export class EmscriptenSession {
     }
   }
 
+  node_video_info(requestId, nodeToken) {
+    this.#assertOpen(requestId);
+    this.#requireToken(nodeToken, requestId);
+    const method = this.#module._vs_rust_node_video_info;
+    if (typeof method !== "function") {
+      return undefined;
+    }
+
+    const out = this.#malloc(requestId, 32, "video metadata output");
+    try {
+      const status = method(
+        nodeToken.slot,
+        nodeToken.generation,
+        out,
+        out + 4,
+        out + 8,
+        out + 16,
+        out + 24,
+      );
+      if (status !== STATUS_OK) {
+        throw this.#statusError(requestId, status, "reading the upstream video metadata failed");
+      }
+      return {
+        width: this.#readU32(out),
+        height: this.#readU32(out + 4),
+        numFrames: this.#readU32(out + 8),
+        fpsNum: this.#readI64(out + 16),
+        fpsDen: this.#readI64(out + 24),
+      };
+    } finally {
+      this.#module._free(out);
+    }
+  }
+
+  source_create(requestId, coreToken, width, height, numFrames, fpsNum, fpsDen) {
+    this.#assertOpen(requestId);
+    this.#requireToken(coreToken, requestId);
+    requireU32(width, requestId, "source width");
+    requireU32(height, requestId, "source height");
+    requireU32(numFrames, requestId, "source frame count");
+    requireI64(fpsNum, requestId, "source fps numerator");
+    requireI64(fpsDen, requestId, "source fps denominator");
+    const method = this.#module._vs_rust_source_create;
+    if (typeof method !== "function") {
+      throw workerError(requestId, "unsupported-source", "the native runtime does not implement source_create()");
+    }
+
+    const out = this.#malloc(requestId, 8, "source node token output");
+    try {
+      const status = method(
+        coreToken.slot,
+        coreToken.generation,
+        width,
+        height,
+        numFrames,
+        BigInt(fpsNum),
+        BigInt(fpsDen),
+        out,
+        out + 4,
+      );
+      if (status !== STATUS_OK) {
+        throw this.#statusError(requestId, status, "creating the browser source node failed");
+      }
+      return { slot: this.#readU32(out), generation: this.#readU32(out + 4) };
+    } finally {
+      this.#module._free(out);
+    }
+  }
+
+  source_upload_rgba(
+    requestId,
+    nodeToken,
+    frameNumber,
+    rgba,
+    durationNum = 0,
+    durationDen = 0,
+    absoluteTime = Number.NaN,
+  ) {
+    this.#assertOpen(requestId);
+    this.#requireToken(nodeToken, requestId);
+    this.#requireFrameNumber(frameNumber, requestId);
+    requireI64(durationNum, requestId, "frame duration numerator");
+    requireI64(durationDen, requestId, "frame duration denominator");
+    if (typeof absoluteTime !== "number" || (!Number.isNaN(absoluteTime) && !Number.isFinite(absoluteTime))) {
+      throw workerError(requestId, "invalid-timing", "absoluteTime must be finite or NaN");
+    }
+    const bytes = normalizeUploadBytes(rgba, requestId);
+    const pointer = this.#malloc(requestId, bytes.byteLength, "source RGBA8 frame");
+    try {
+      this.#module.HEAPU8.set(bytes, pointer);
+      const method = this.#module._vs_rust_source_upload_rgba;
+      if (typeof method !== "function") {
+        throw workerError(requestId, "unsupported-source", "the native runtime does not implement source_upload_rgba()");
+      }
+      const status = method(
+        nodeToken.slot,
+        nodeToken.generation,
+        frameNumber,
+        pointer,
+        bytes.byteLength,
+        BigInt(durationNum),
+        BigInt(durationDen),
+        absoluteTime,
+      );
+      if (status !== STATUS_OK) {
+        throw this.#statusError(requestId, status, "uploading a browser source frame failed");
+      }
+    } finally {
+      this.#module._free(pointer);
+    }
+  }
+
   node_release(requestId, nodeToken) {
     this.#assertOpen(requestId);
     this.#requireToken(nodeToken, requestId);
@@ -258,6 +370,39 @@ export class EmscriptenSession {
       return this.#module.HEAPU8.slice(output, output + byteLength);
     } finally {
       this.#module._free(output);
+    }
+  }
+
+  frame_timing(requestId, frameToken) {
+    this.#assertOpen(requestId);
+    this.#requireToken(frameToken, requestId);
+    const method = this.#module._vs_rust_frame_timing;
+    if (typeof method !== "function") {
+      return undefined;
+    }
+
+    const out = this.#malloc(requestId, 32, "frame timing output");
+    try {
+      const status = method(
+        frameToken.slot,
+        frameToken.generation,
+        out,
+        out + 8,
+        out + 16,
+        out + 24,
+      );
+      if (status !== STATUS_OK) {
+        throw this.#statusError(requestId, status, "reading upstream frame timing failed");
+      }
+      const flags = this.#readU32(out + 24);
+      return {
+        durationNum: this.#readI64(out),
+        durationDen: this.#readI64(out + 8),
+        absoluteTime: this.#readF64(out + 16),
+        flags,
+      };
+    } finally {
+      this.#module._free(out);
     }
   }
 
@@ -405,6 +550,19 @@ export class EmscriptenSession {
     return new DataView(this.#module.HEAPU8.buffer, pointer, 4).getUint32(0, true);
   }
 
+  #readI64(pointer) {
+    const value = new DataView(this.#module.HEAPU8.buffer, pointer, 8).getBigInt64(0, true);
+    const converted = Number(value);
+    if (!Number.isSafeInteger(converted)) {
+      throw new Error("native i64 metadata exceeds JavaScript safe integer range");
+    }
+    return converted;
+  }
+
+  #readF64(pointer) {
+    return new DataView(this.#module.HEAPU8.buffer, pointer, 8).getFloat64(0, true);
+  }
+
   #readErrorMessage(errorBuffer) {
     const head = this.#module.HEAPU8[errorBuffer];
     if (head === 0) {
@@ -454,6 +612,35 @@ export class EmscriptenSession {
   #utf8(value) {
     return new TextEncoder().encode(value);
   }
+}
+
+function normalizeUploadBytes(value, requestId) {
+  let bytes;
+  if (value instanceof ArrayBuffer) {
+    bytes = new Uint8Array(value);
+  } else if (ArrayBuffer.isView(value)) {
+    bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  } else {
+    throw workerError(requestId, "invalid-frame", "source RGBA8 data must be an ArrayBuffer or typed-array view");
+  }
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_RGBA_BYTES) {
+    throw workerError(requestId, "invalid-frame", "source RGBA8 data must be between 1 byte and 16 MiB");
+  }
+  return bytes;
+}
+
+function requireU32(value, requestId, label) {
+  if (!isU32(value)) {
+    throw workerError(requestId, "invalid-argument", `${label} must be a u32`);
+  }
+  return value;
+}
+
+function requireI64(value, requestId, label) {
+  if (!Number.isSafeInteger(value)) {
+    throw workerError(requestId, "invalid-argument", `${label} must be a safe integer`);
+  }
+  return value;
 }
 
 function requireNumberArray(value, requestId, label) {

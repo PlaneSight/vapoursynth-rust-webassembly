@@ -42,9 +42,9 @@ _U32_MAX = 0xFFFF_FFFF
 _INT_MIN = -(2**53) + 1
 _INT_MAX = 2**53 - 1
 
-# Native VapourSynth preset pixel format identifiers (legacy VapourSynth.h:
-# pfRGB24 = cmRGB + 10, where cmRGB = 2000000).
-_FORMAT_IDS = {"RGB24": 2_000_010}
+# Native VapourSynth 4 preset pixel-format identifier:
+# VS_MAKE_VIDEO_ID(cfRGB, stInteger, 8, 0, 0).
+_FORMAT_IDS = {"RGB24": 537_395_200}
 
 _plan = {"version": _PLAN_VERSION, "operations": [], "outputs": []}
 _next_op_id = 1

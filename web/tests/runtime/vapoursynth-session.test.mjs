@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AuthoringSession } from "../../runtime/vapoursynth/session.mjs";
-
-const RGB24_FORMAT_ID = 2_000_010;
+const RGB24_FORMAT_ID = 537_395_200;
 
 const DEFAULT_PLAN = {
   version: 1,

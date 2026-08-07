@@ -13,6 +13,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "pyodide": "0.29.4"
+    "pyodide": "314.0.3"
   }
 }

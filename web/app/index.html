@@ -75,7 +75,7 @@
       .skip-link { position: fixed; z-index: 20; top: .7rem; left: .7rem; padding: .55rem .7rem; color: var(--ink-950); background: var(--draft); transform: translateY(-180%); text-decoration: none; }
       .skip-link:focus { transform: translateY(0); }
 
-      .app-shell { display: grid; min-height: 100vh; grid-template-rows: auto minmax(0, 1fr) auto; }
+      .app-shell { display: grid; height: 100vh; min-height: 100vh; grid-template-rows: auto minmax(0, 1fr) auto auto auto; overflow: auto; }
       .command-bar { display: flex; align-items: center; min-height: 3.35rem; gap: .75rem; padding: .45rem .85rem; border-bottom: 1px solid var(--line); background: var(--ink-800); }
       .brand { display: inline-flex; align-items: center; gap: .55rem; min-width: max-content; padding-right: .9rem; border-right: 1px solid var(--line); color: var(--paper); font-size: .88rem; font-weight: 700; letter-spacing: -.03em; }
       .brand-mark { display: grid; width: 1.65rem; height: 1.65rem; place-content: center; border: 1px solid var(--draft); color: var(--draft); font-size: .68rem; letter-spacing: -.08em; }
@@ -84,8 +84,8 @@
       .theme-toggle { min-height: 2rem; border: 1px solid var(--line); padding: 0 .55rem; background: transparent; color: var(--paper-muted); cursor: pointer; font-size: .63rem; letter-spacing: .06em; text-transform: uppercase; }
       .theme-toggle:hover { color: var(--draft); border-color: var(--draft); }
 
-      .workbench { display: grid; min-height: 0; grid-template-columns: minmax(14.5rem, 17rem) minmax(28rem, 1fr) minmax(16rem, 19rem); grid-template-rows: minmax(29rem, 1fr) minmax(13rem, .35fr); overflow: hidden; }
-      .library, .inspector, .source-panel { min-width: 0; background: var(--ink-900); }
+      .workbench { display: grid; min-height: 0; grid-template-columns: minmax(14.5rem, 17rem) minmax(28rem, 1fr) minmax(16rem, 19rem); grid-template-rows: minmax(22rem, 1fr) minmax(10rem, .35fr); overflow: hidden; }
+      .library, .inspector, .source-panel { min-width: 0; min-height: 0; background: var(--ink-900); }
       .library { grid-column: 1; grid-row: 1 / span 2; border-right: 1px solid var(--line); overflow: auto; }
       .graph-panel { position: relative; min-width: 0; min-height: 0; overflow: hidden; background-color: var(--ink-800); background-image: linear-gradient(var(--grid-major) 1px, transparent 1px), linear-gradient(90deg, var(--grid-major) 1px, transparent 1px), linear-gradient(var(--grid-minor) 1px, transparent 1px), linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px); background-size: 5rem 5rem, 5rem 5rem, 1rem 1rem, 1rem 1rem; }
       .graph-panel::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 1px var(--line-subtle), inset 0 0 4rem var(--shadow-ink); }
@@ -122,7 +122,7 @@
       .graph-rulers span { width: 25%; padding: .62rem 0 0 .4rem; border-left: 1px solid var(--line-subtle); }
       .canvas-title { position: absolute; top: 2.55rem; left: 2.2rem; z-index: 1; color: var(--paper-muted); font-size: .59rem; letter-spacing: .08em; text-transform: uppercase; pointer-events: none; }
       .canvas-title strong { color: var(--paper); }
-      .graph-nodes { position: absolute; inset: 1.85rem 0 0; min-height: 30rem; }
+      .graph-nodes { position: absolute; inset: 1.85rem 0 0; min-height: 0; }
       .graph-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
       .graph-wires path { fill: none; stroke: var(--draft); stroke-width: 2.2; vector-effect: non-scaling-stroke; filter: drop-shadow(0 1px 3px var(--shadow-ink)); transition: stroke-width 120ms ease, opacity 120ms ease; }
       .graph-wires path.is-output { stroke: var(--signal); }
@@ -154,7 +154,7 @@
       [data-output-state][data-state="changed"] { color: var(--draft); }
       .node-row { display: flex; justify-content: space-between; gap: .4rem; min-height: 1.3rem; border-bottom: 1px solid var(--line-subtle); }
       .node-row:last-child { border: 0; }
-      .node-port { position: absolute; top: 50%; width: .75rem; height: .75rem; border: 2px solid var(--draft); border-radius: 50%; background: var(--ink-800); transform: translateY(-50%); cursor: crosshair; transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
+      .node-port { position: absolute; z-index: 4; top: 50%; width: .75rem; height: .75rem; border: 2px solid var(--draft); border-radius: 50%; background: var(--ink-800); transform: translateY(-50%); cursor: crosshair; transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease; }
       .node-port::after { content: ""; position: absolute; inset: -10px; border-radius: 50%; }
       .node-port:hover { background: var(--signal); border-color: var(--signal); box-shadow: 0 0 0 4px var(--signal-dim); }
       .node-port.in { left: -.43rem; } .node-port.out { right: -.43rem; }
@@ -192,6 +192,15 @@
       .param-field { display: grid; grid-template-columns: 1fr 5.4rem .8rem; align-items: center; gap: .4rem; padding: .42rem 0; border-top: 1px solid var(--line-subtle); color: var(--paper-muted); font-size: .66rem; }
       .param-field input { width: 100%; min-height: 1.85rem; border: 1px solid var(--line); padding: 0 .35rem; background: var(--ink-950); color: var(--paper); text-align: right; caret-color: var(--draft); }
       .param-field span:last-child { color: var(--draft); font-size: .57rem; }
+      .argument-hint { margin: .35rem 0 .6rem; color: var(--paper-muted); font-size: .59rem; line-height: 1.5; }
+      .argument-rows { display: grid; gap: .45rem; margin-bottom: .55rem; }
+      .argument-row { display: grid; grid-template-columns: minmax(0, 1fr) 5.2rem auto; gap: .3rem; align-items: end; padding: .45rem 0; border-top: 1px solid var(--line-subtle); }
+      .argument-control { display: grid; min-width: 0; gap: .18rem; color: var(--paper-muted); font-size: .52rem; letter-spacing: .05em; text-transform: uppercase; }
+      .argument-control input, .argument-control select { width: 100%; min-height: 1.8rem; border: 1px solid var(--line); padding: 0 .35rem; background: var(--ink-950); color: var(--paper); font-size: .61rem; letter-spacing: 0; text-transform: none; }
+      .argument-control-value { grid-column: 1 / -1; }
+      .argument-control-value input { font-family: var(--mono); }
+      .argument-remove { min-height: 1.8rem; border: 1px solid var(--line); padding: 0 .35rem; background: transparent; color: var(--paper-muted); cursor: pointer; font-size: .54rem; }
+      .argument-remove:hover { border-color: var(--signal); color: var(--signal); }
       .inspector-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; }
       .blueprint-button { min-height: 2.1rem; border: 1px solid var(--draft); padding: 0 .55rem; background: transparent; color: var(--draft); cursor: pointer; font-size: .62rem; letter-spacing: .04em; }
       .blueprint-button:hover { color: var(--ink-950); background: var(--draft); }
@@ -214,8 +223,8 @@
       .diagnostics-toolbar { display: flex; justify-content: flex-end; padding: .45rem .75rem; border-bottom: 1px solid var(--line-subtle); } .diagnostics-clear { border: 1px solid var(--line); padding: .25rem .45rem; background: transparent; color: var(--paper-muted); cursor: pointer; font-size: .6rem; } .diagnostics-log { max-height: 12rem; overflow: auto; margin: 0; padding: .7rem .85rem; color: var(--paper-muted); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .64rem; line-height: 1.55; } .diagnostic-error { color: var(--error); } .diagnostic-warn { color: var(--warning); }
       .limitations-body { padding: .8rem; color: var(--paper-muted); font-size: .67rem; line-height: 1.55; } .limitations-body code { color: var(--draft); } .limitations-body ul { margin: .4rem 0; padding-left: 1rem; }
       @keyframes ping { 50% { opacity: .35; } }
-      @media (max-width: 68rem) { .workbench { grid-template-columns: minmax(13rem, 15rem) minmax(24rem, 1fr); grid-template-rows: minmax(30rem, 1fr) minmax(14rem, .4fr) auto; } .inspector { grid-column: 1 / -1; grid-row: 3; border-left: 0; border-top: 1px solid var(--line); } .source-panel { grid-column: 2; grid-row: 2; } .library { grid-row: 1 / span 2; } .graph-panel { grid-column: 2; } }
-      @media (max-width: 48rem) { .command-bar { overflow-x: auto; } .runtime-readout { display: none; } .workbench { display: block; overflow: visible; } .library, .graph-panel, .inspector, .source-panel { min-height: auto; border-left: 0; border-right: 0; } .library { max-height: 12.5rem; } .graph-panel { height: 34rem; } .inspector { max-height: none; } .source-panel textarea { min-height: 13rem; } .program-node { width: 8rem; } .graph-node { min-width: 8.3rem; } .graph-node[data-index="1"] { left: 37% !important; } .graph-node[data-index="2"] { left: 61% !important; } }
+      @media (max-width: 68rem) { .workbench { grid-template-columns: minmax(13rem, 15rem) minmax(24rem, 1fr); grid-template-rows: minmax(22rem, 1fr) minmax(10rem, .4fr) auto; } .inspector { grid-column: 1 / -1; grid-row: 3; border-left: 0; border-top: 1px solid var(--line); } .source-panel { grid-column: 2; grid-row: 2; } .library { grid-row: 1 / span 2; } .graph-panel { grid-column: 2; } }
+      @media (max-width: 48rem) { .app-shell { height: auto; } .command-bar { overflow-x: auto; } .runtime-readout { display: none; } .workbench { display: block; overflow: visible; } .library, .graph-panel, .inspector, .source-panel { min-height: auto; border-left: 0; border-right: 0; } .library { max-height: 12.5rem; } .graph-panel { height: 34rem; } .inspector { max-height: none; } .source-panel textarea { min-height: 13rem; } .program-node { width: 8rem; } .graph-node { min-width: 8.3rem; } .graph-node[data-index="1"] { left: 37% !important; top: 40% !important; } .graph-node[data-index="2"] { left: 65% !important; top: 58% !important; } .minimap { right: .65rem; bottom: .65rem; } }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
     </style>
   </head>
@@ -266,7 +275,13 @@
             <div class="param-field"><label for="source-width">Width</label><input id="source-width" type="number" min="64" max="1920" step="1" value="320" data-graph-width data-graph-value="width"><span>px</span></div>
             <div class="param-field"><label for="source-height">Height</label><input id="source-height" type="number" min="64" max="1080" step="1" value="180" data-graph-height data-graph-value="height"><span>px</span></div>
           </div>
-          <div class="inspector-section"><div class="inspector-actions"><button class="blueprint-button signal" type="button" data-add-graph>Add to graph</button><button class="blueprint-button" type="button" data-copy-call>Copy call</button><button class="blueprint-button" type="button" data-insert-note>Insert source note</button></div><p class="inspector-note" data-inspector-note>Library entries are reference material. An authored call is plotted only after its valid Python arguments exist in the source record.</p></div>
+          <div class="inspector-section" data-argument-controls hidden>
+            <p class="field-label">Filter arguments</p>
+            <p class="argument-hint" data-argument-hint>Configure typed values before adding this filter to the graph.</p>
+            <div class="argument-rows" data-argument-rows></div>
+            <button class="blueprint-button" type="button" data-add-argument>Add argument</button>
+          </div>
+          <div class="inspector-section"><div class="inspector-actions"><button class="blueprint-button signal" type="button" data-add-graph>Add to graph</button><button class="blueprint-button" type="button" data-copy-call>Copy call</button><button class="blueprint-button" type="button" data-insert-note>Insert source note</button></div><p class="inspector-note" data-inspector-note>Choose a filter, configure its typed arguments, then add it to the graph. The source record remains the executable truth.</p></div>
         </aside>
 
         <section class="source-panel" aria-labelledby="source-title">

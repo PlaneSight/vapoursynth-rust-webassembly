@@ -17,14 +17,114 @@ test.describe("blueprint graph interactions", () => {
     await expect(page.locator("textarea")).toHaveValue(/vs\.core\.std\.AddBorders\(clip, left=7, right=3, top=5, bottom=9/);
   });
 
-  test("plots a reference-only function as a dashed draft", async ({ page }) => {
+  test("builds a filter call from typed inspector arguments", async ({ page }) => {
     await page.locator("[data-library-search]").fill("Text");
     await page.locator('[data-library-function="Text"]').click();
+    const argumentsPanel = page.locator("[data-argument-controls]");
+    await expect(argumentsPanel).toBeVisible();
+    await page.locator("[data-add-argument]").click();
+    const row = page.locator("[data-argument-row]").last();
+    await row.locator("[data-argument-key]").fill("text");
+    await row.locator("[data-argument-value]").fill("browser draft");
     await page.locator("[data-add-graph]").click();
-    const draft = page.locator('[data-graph-node="Text"]');
+    await expect(page.locator('[data-graph-node="Text"]')).not.toHaveClass(/is-draft/);
+    await expect(page.locator("textarea")).toHaveValue(/std\.Text\(clip, text="browser draft"\)/);
+  });
+
+  test("runs a preset numeric filter through the worker", async ({ page }) => {
+    await page.locator("[data-library-search]").fill("Levels");
+    await page.locator('[data-library-function="Levels"]').click();
+    await page.locator("[data-add-graph]").click();
+    await expect(page.locator("textarea")).toHaveValue(/Levels\(clip, min_in=\[0\.0\], max_in=\[255\.0\]/);
+    await page.locator(".run-button").click();
+    await expect(page.locator("[data-output-state]")).toHaveAttribute("data-state", "ready", { timeout: 90_000 });
+  });
+
+  test("rejects invalid inspector argument names without changing the graph", async ({ page }) => {
+    await page.locator("[data-library-search]").fill("Text");
+    await page.locator('[data-library-function="Text"]').click();
+    await page.locator("[data-add-argument]").click();
+    const row = page.locator("[data-argument-row]").last();
+    await row.locator("[data-argument-key]").fill("not valid");
+    await row.locator("[data-argument-value]").fill("1");
+    await page.locator("[data-add-graph]").click();
+    await expect(page.locator("[data-inspector-note]")).toHaveText(/argument names must be Python identifiers/);
+    await expect(page.locator("[data-graph-count]")).toHaveText("03");
+  });
+
+  test("rejects Python keywords and duplicate argument names", async ({ page }) => {
+    await page.locator("[data-library-search]").fill("Text");
+    await page.locator('[data-library-function="Text"]').click();
+    await page.locator("[data-add-argument]").click();
+    await page.locator("[data-add-argument]").click();
+    const rows = page.locator("[data-argument-row]");
+    await rows.nth(0).locator("[data-argument-key]").fill("class");
+    await rows.nth(0).locator("[data-argument-value]").fill("first");
+    await rows.nth(1).locator("[data-argument-key]").fill("text");
+    await rows.nth(1).locator("[data-argument-value]").fill("second");
+    await page.locator("[data-add-graph]").click();
+    await expect(page.locator("[data-inspector-note]")).toHaveText(/Python identifiers/);
+    await expect(page.locator("[data-graph-count]")).toHaveText("03");
+    await rows.nth(0).locator("[data-argument-key]").fill("text");
+    await page.locator("[data-add-graph]").click();
+    await expect(page.locator("[data-inspector-note]")).toHaveText("argument names must be unique");
+    await expect(page.locator("[data-graph-count]")).toHaveText("03");
+  });
+
+  test("hydrates typed arguments from a plotted source call", async ({ page }) => {
+    const source = page.locator("textarea");
+    await source.evaluate((element) => {
+      element.value = element.value.replace(
+        "clip.set_output()",
+        "clip = vs.core.std.AddBorders(clip, left=11, right=3, top=5, bottom=9, color=[0.0, 0.0, 0.0])\nclip.set_output()",
+      );
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.locator('[data-graph-node="AddBorders"]').click();
+    await expect(page.locator('[data-graph-node="AddBorders"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("[data-argument-row]").first().locator("[data-argument-value]")).toHaveValue("11");
+  });
+  test("hydrates duplicate plotted filters from their own source calls", async ({ page }) => {
+    const source = page.locator("textarea");
+    await source.evaluate((element) => {
+      element.value = element.value.replace(
+        "clip = vs.core.std.Invert(clip)",
+        "clip = vs.core.std.AddBorders(clip, left=11, right=3, top=5, bottom=9, color=[0.0, 0.0, 0.0])\n"
+          + "clip = vs.core.std.AddBorders(clip, left=22, right=3, top=5, bottom=9, color=[0.0, 0.0, 0.0])",
+      );
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const nodes = page.locator('[data-graph-node="AddBorders"]');
+    await expect(nodes).toHaveCount(2);
+    await nodes.nth(0).click();
+    await expect(page.locator("[data-argument-row]").first().locator("[data-argument-value]")).toHaveValue("11");
+    await nodes.nth(1).click();
+    await expect(page.locator("[data-argument-row]").first().locator("[data-argument-value]")).toHaveValue("22");
+  });
+
+
+  test("keeps BlankClip dimensions synchronized with typed arguments", async ({ page }) => {
+    await page.locator('[data-library-function="BlankClip"]').click();
+    await page.locator("[data-argument-row]").first().locator("[data-argument-value]").fill("640");
+    await expect(page.locator("[data-graph-width]")).toHaveValue("640");
+    await expect(page.locator("textarea")).toHaveValue(/BlankClip\(width=640, height=180/);
+  });
+
+  test("inserts a reference note through the inspector", async ({ page }) => {
+    await page.locator("[data-library-search]").fill("FrameEval");
+    await page.locator('[data-library-function="FrameEval"]').click();
+    await page.locator("[data-insert-note]").click();
+    await expect(page.locator("textarea")).toHaveValue(/# Reference: vs\.core\.std\.FrameEval\(…\)/);
+  });
+
+  test("plots an unsupported function as a dashed draft", async ({ page }) => {
+    await page.locator("[data-library-search]").fill("FrameEval");
+    await page.locator('[data-library-function="FrameEval"]').click();
+    await page.locator("[data-add-graph]").click();
+    const draft = page.locator('[data-graph-node="FrameEval"]');
     await expect(draft).toHaveCount(1);
     await expect(draft).toHaveClass(/is-draft/);
-    await expect(page.locator("textarea")).toHaveValue(/# Reference: vs\.core\.std\.Text\(…\)/);
+    await expect(page.locator("textarea")).toHaveValue(/# Reference: vs\.core\.std\.FrameEval\(…\)/);
   });
 
   test("deletes a plotted node with the Delete key", async ({ page }) => {

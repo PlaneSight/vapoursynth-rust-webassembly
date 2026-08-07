@@ -17,28 +17,73 @@ const VECTOR_VALIDATED_FUNCTIONS = new Set([
   "AddBorders", "BlankClip", "Crop", "Expr", "FlipHorizontal", "FlipVertical", "Invert", "Levels", "Lut", "Maximum", "Median", "Minimum", "ShufflePlanes", "StackHorizontal", "StackVertical", "Transpose", "Turn180",
 ]);
 
-// Runnable call templates for the render-vector-validated subset, matching the
-// corpus plans in native/tests/vectors byte for byte (same argument values,
-// float lists kept floats, colorfamily as the RGB enum int). Anything outside
-// this table plots as a reference draft until the author writes valid args.
-const NODE_CALL_TEMPLATES = Object.freeze({
-  BlankClip: ({ width, height }) => `clip = vs.core.std.BlankClip(width=${width}, height=${height}, format=vs.RGB24, color=[32.0, 96.0, 224.0])`,
-  AddBorders: () => "clip = vs.core.std.AddBorders(clip, left=7, right=3, top=5, bottom=9, color=[0.0, 0.0, 0.0])",
-  Crop: () => "clip = vs.core.std.Crop(clip, left=40, right=40, top=30, bottom=30)",
-  Expr: () => 'clip = vs.core.std.Expr(clip, expr="x")',
-  FlipHorizontal: () => "clip = vs.core.std.FlipHorizontal(clip)",
-  FlipVertical: () => "clip = vs.core.std.FlipVertical(clip)",
-  Invert: () => "clip = vs.core.std.Invert(clip)",
-  Levels: () => "clip = vs.core.std.Levels(clip, min_in=[0.0], max_in=[255.0], gamma=[1.0], min_out=[16.0], max_out=[235.0])",
-  Lut: () => "clip = vs.core.std.Lut(clip, lut=list(range(255, -1, -1)))",
-  Maximum: () => "clip = vs.core.std.Maximum(clip)",
-  Median: () => "clip = vs.core.std.Median(clip)",
-  Minimum: () => "clip = vs.core.std.Minimum(clip)",
-  ShufflePlanes: () => "clip = vs.core.std.ShufflePlanes(clip, planes=[0, 1, 2], colorfamily=2)",
-  StackHorizontal: () => "clip = vs.core.std.StackHorizontal([clip, clip])",
-  StackVertical: () => "clip = vs.core.std.StackVertical([clip, clip])",
-  Transpose: () => "clip = vs.core.std.Transpose(clip)",
-  Turn180: () => "clip = vs.core.std.Turn180(clip)",
+const PYTHON_KEYWORDS = new Set([
+  "and", "as", "assert", "async", "await", "break", "case", "class", "continue", "def", "del",
+  "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is",
+  "lambda", "match", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with",
+  "yield",
+]);
+
+// Metadata drives the inspector and the source serializer. The browser
+// authoring API accepts scalar values and homogeneous numeric arrays, so
+// every preset stays inside that contract instead of embedding opaque
+// Python snippets in the UI.
+const FILTER_ARGUMENT_DEFINITIONS = Object.freeze({
+  BlankClip: {
+    input: "none",
+    arguments: [
+      { key: "width", label: "Width", kind: "int", defaultValue: 320 },
+      { key: "height", label: "Height", kind: "int", defaultValue: 180 },
+      { key: "format", label: "Format", kind: "format", defaultValue: "vs.RGB24" },
+      { key: "color", label: "Color", kind: "floatArray", defaultValue: "[32.0, 96.0, 224.0]" },
+    ],
+  },
+  AddBorders: {
+    arguments: [
+      { key: "left", label: "Left", kind: "int", defaultValue: 7 },
+      { key: "right", label: "Right", kind: "int", defaultValue: 3 },
+      { key: "top", label: "Top", kind: "int", defaultValue: 5 },
+      { key: "bottom", label: "Bottom", kind: "int", defaultValue: 9 },
+      { key: "color", label: "Color", kind: "floatArray", defaultValue: "[0.0, 0.0, 0.0]" },
+    ],
+  },
+  Crop: {
+    arguments: [
+      { key: "left", label: "Left", kind: "int", defaultValue: 40 },
+      { key: "right", label: "Right", kind: "int", defaultValue: 40 },
+      { key: "top", label: "Top", kind: "int", defaultValue: 30 },
+      { key: "bottom", label: "Bottom", kind: "int", defaultValue: 30 },
+    ],
+  },
+  Text: { requiresArguments: true },
+  Levels: {
+    arguments: [
+      { key: "min_in", label: "Min in", kind: "floatArray", defaultValue: "[0.0]" },
+      { key: "max_in", label: "Max in", kind: "floatArray", defaultValue: "[255.0]" },
+      { key: "gamma", label: "Gamma", kind: "floatArray", defaultValue: "[1.0]" },
+      { key: "min_out", label: "Min out", kind: "floatArray", defaultValue: "[16.0]" },
+      { key: "max_out", label: "Max out", kind: "floatArray", defaultValue: "[235.0]" },
+    ],
+  },
+  Lut: {
+    arguments: [{ key: "lut", label: "Lookup table", kind: "intArray", defaultValue: Array.from({ length: 256 }, (_, index) => 255 - index) }],
+  },
+  ShufflePlanes: {
+    arguments: [
+      { key: "planes", label: "Planes", kind: "intArray", defaultValue: "[0, 1, 2]" },
+      { key: "colorfamily", label: "Color family", kind: "int", defaultValue: 2 },
+    ],
+  },
+  StackHorizontal: { inputExpression: "clip, clip" },
+  StackVertical: { inputExpression: "clip, clip" },
+  Invert: {},
+  FlipHorizontal: {},
+  FlipVertical: {},
+  Maximum: {},
+  Median: {},
+  Minimum: {},
+  Transpose: {},
+  Turn180: {},
 });
 
 const NODE_INFO = {
@@ -63,10 +108,15 @@ const inspectorPath = document.querySelector("[data-inspector-path]");
 const inspectorSpecs = document.querySelector("[data-inspector-specs]");
 const inspectorNote = document.querySelector("[data-inspector-note]");
 const dimensionControls = document.querySelector("[data-dimension-controls]");
+const argumentControls = document.querySelector("[data-argument-controls]");
+const argumentRows = document.querySelector("[data-argument-rows]");
+const argumentHint = document.querySelector("[data-argument-hint]");
+const addArgumentButton = document.querySelector("[data-add-argument]");
 const libraryGroups = document.querySelector("[data-library-groups]");
 const librarySearch = document.querySelector("[data-library-search]");
 const libraryCount = document.querySelector("[data-library-count]");
 const addGraphButton = document.querySelector("[data-add-graph]");
+const argumentDrafts = new Map();
 const diagnostics = createDiagnosticConsole();
 
 let runtimeReady = false;
@@ -102,6 +152,179 @@ function setStatus(message, state) { status.textContent = message; runtimeStatus
 function setGraphState(state, message) { graphState = state; graphStatus.dataset.state = state; graphStatus.textContent = message; }
 function updateRunControl() { run.disabled = !runtimeReady || rendering; runLabel.textContent = rendering ? "Rendering…" : "Run graph"; run.setAttribute("aria-busy", String(rendering)); }
 
+function filterDefinition(name) {
+  const definition = FILTER_ARGUMENT_DEFINITIONS[name];
+  return definition ? { ...definition, arguments: definition.arguments ?? [] } : { input: "clip", arguments: [] };
+}
+
+function supportsArgumentAuthoring(name) {
+  return Object.hasOwn(FILTER_ARGUMENT_DEFINITIONS, name);
+}
+
+function formatArgumentDefault(value, kind) {
+  if (value === undefined) return "";
+  if (Array.isArray(value)) return `[${value.join(", ")}]`;
+  if (kind === "string") return String(value);
+  return String(value);
+}
+
+function getArgumentDraft(name) {
+  if (!argumentDrafts.has(name)) {
+    const definition = filterDefinition(name);
+    argumentDrafts.set(name, definition.arguments.map((argument) => ({
+      ...argument,
+      value: formatArgumentDefault(argument.defaultValue, argument.kind),
+    })));
+  }
+  return argumentDrafts.get(name);
+}
+
+function formatFloatLiteral(value) {
+  const text = String(value);
+  return Number.isInteger(value) ? `${text}.0` : text;
+}
+
+function parseArrayArgument(rawValue, kind, key) {
+  const text = rawValue.trim();
+  if (!text) throw new Error(`${key} must be a non-empty list`);
+  let values;
+  try {
+    values = JSON.parse(text);
+  } catch {
+    values = text.split(",").map((value) => value.trim()).filter(Boolean);
+  }
+  if (!Array.isArray(values) || values.length === 0 || values.length > 4096) {
+    throw new Error(`${key} must contain between 1 and 4096 values`);
+  }
+  const parsed = values.map((value) => {
+    const number = Number(value);
+    const valid = kind === "intArray"
+      ? Number.isSafeInteger(number)
+      : Number.isFinite(number);
+    if (!valid) throw new Error(`${key} contains an invalid ${kind === "intArray" ? "integer" : "float"}`);
+    return kind === "intArray" ? number : formatFloatLiteral(number);
+  });
+  return `[${parsed.join(", ")}]`;
+}
+
+function serializeArgument(argument) {
+  const key = argument.key.trim();
+  const rawValue = argument.value.trim();
+  if (!/^[A-Za-z_]\w*$/.test(key) || PYTHON_KEYWORDS.has(key)) throw new Error("argument names must be Python identifiers and not Python keywords");
+  if (!rawValue) throw new Error(`${key} needs a value`);
+  switch (argument.kind) {
+    case "int": {
+      const value = Number(rawValue);
+      if (!Number.isSafeInteger(value)) throw new Error(`${key} must be a safe integer`);
+      return `${key}=${value}`;
+    }
+    case "float": {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value)) throw new Error(`${key} must be a finite number`);
+      return `${key}=${formatFloatLiteral(value)}`;
+    }
+    case "format":
+      if (!/^vs\.[A-Za-z_]\w*$/.test(rawValue)) throw new Error(`${key} must be a supported vs format`);
+      return `${key}=${rawValue}`;
+    case "intArray":
+    case "floatArray":
+      return `${key}=${parseArrayArgument(rawValue, argument.kind, key)}`;
+    case "string":
+      return `${key}=${JSON.stringify(rawValue)}`;
+    default:
+      throw new Error(`${key} has an unsupported argument type`);
+  }
+}
+
+function buildFilterCall(name) {
+  if (!supportsArgumentAuthoring(name)) return null;
+  const definition = filterDefinition(name);
+  const draft = getArgumentDraft(name);
+  if (definition.requiresArguments && draft.length === 0) return null;
+  const keys = new Set();
+  const named = draft.map((argument) => {
+    const key = argument.key.trim();
+    if (keys.has(key)) throw new Error("argument names must be unique");
+    keys.add(key);
+    return serializeArgument(argument);
+  });
+  const positional = definition.input === "none"
+    ? []
+    : [definition.inputExpression ?? "clip"];
+  const argumentsText = [...positional, ...named].join(", ");
+  return `clip = vs.core.std.${name}(${argumentsText})`;
+}
+
+function createArgumentControl(label, control, className = "") {
+  const wrapper = document.createElement("label");
+  wrapper.className = `argument-control ${className}`.trim();
+  const caption = document.createElement("span");
+  caption.textContent = label;
+  wrapper.append(caption, control);
+  return wrapper;
+}
+
+function renderArgumentControls() {
+  const info = functionInfo(selectedLibraryFunction);
+  const isVideo = info.kind === "video" || info.kind === "source" || info.kind === "filter";
+  argumentControls.hidden = !isVideo;
+  if (!isVideo) return;
+  const definition = filterDefinition(selectedLibraryFunction);
+  const draft = getArgumentDraft(selectedLibraryFunction);
+  argumentHint.textContent = supportsArgumentAuthoring(selectedLibraryFunction)
+    ? definition.requiresArguments && draft.length === 0
+      ? "Add the required named arguments before plotting this filter."
+      : "Preset values are ready to add. Remove optional rows or add named arguments before plotting."
+    : "This function has no safe browser signature metadata and remains a reference draft. Author its exact call in the source editor.";
+  argumentRows.replaceChildren();
+  getArgumentDraft(selectedLibraryFunction).forEach((argument, index) => {
+    const row = document.createElement("div");
+    row.className = "argument-row";
+    row.dataset.argumentIndex = String(index);
+    row.dataset.argumentRow = "";
+
+    const key = document.createElement("input");
+    key.type = "text";
+    key.value = argument.key;
+    key.placeholder = "name";
+    key.setAttribute("aria-label", "Argument name");
+    key.dataset.argumentKey = "";
+
+    const kind = document.createElement("select");
+    kind.setAttribute("aria-label", "Argument type");
+    kind.dataset.argumentKind = "";
+    for (const option of ["int", "float", "string", "intArray", "floatArray", "format"]) {
+      const item = document.createElement("option");
+      item.value = option;
+      item.textContent = option;
+      item.selected = option === argument.kind;
+      kind.append(item);
+    }
+
+    const value = document.createElement("input");
+    value.type = "text";
+    value.value = argument.value;
+    value.placeholder = argument.kind.endsWith("Array") ? "[0, 1]" : "value";
+    value.setAttribute("aria-label", "Argument value");
+    value.dataset.argumentValue = "";
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "argument-remove";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${argument.key || "argument"}`);
+    remove.dataset.removeArgument = "";
+
+    row.append(
+      createArgumentControl("Name", key, "argument-control-key"),
+      createArgumentControl("Type", kind, "argument-control-kind"),
+      createArgumentControl("Value", value, "argument-control-value"),
+      remove,
+    );
+    argumentRows.append(row);
+  });
+}
+
 function functionInfo(name) {
   if (NODE_INFO[name]) return NODE_INFO[name];
   const category = CORE_LIBRARY.find((entry) => entry.names.includes(name));
@@ -123,21 +346,93 @@ function lineOf(charIndex) { return source.value.slice(0, charIndex).split("\n")
 
 function parseScript() {
   const operations = [];
-  const callPattern = /^\s*([A-Za-z_]\w*)\s*=\s*vs\.core\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\(/gm;
+  const callPattern = /^[ \t]*([A-Za-z_]\w*)\s*=\s*vs\.core\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\(/gm;
   for (const match of source.value.matchAll(callPattern)) operations.push({ id: match[1], namespace: match[2], name: match[3], kind: "filter", line: lineOf(match.index) });
-  const referencePattern = /^\s*#\s*Reference:\s*vs\.core\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\(/gm;
+  const referencePattern = /^[ \t]*#\s*Reference:\s*vs\.core\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\(/gm;
   for (const match of source.value.matchAll(referencePattern)) operations.push({ id: `ref-${operations.length}`, namespace: match[1], name: match[2], kind: "draft", line: lineOf(match.index) });
-  const outputs = [...source.value.matchAll(/^\s*([A-Za-z_]\w*)\.set_output\((\d*)\)/gm)];
+  const outputs = [...source.value.matchAll(/^[ \t]*([A-Za-z_]\w*)\.set_output\((\d*)\)/gm)];
   if (outputs.length) operations.push({ id: outputs[0][1], namespace: "graph", name: "Output", kind: "output", line: lineOf(outputs[0].index) });
   operations.sort((a, b) => a.line - b.line);
   return operations.length ? operations : [{ id: "graph", namespace: "graph", name: "No plotted calls", kind: "empty", line: 0 }];
+}
+
+function splitCallArguments(text) {
+  const parts = [];
+  let start = 0;
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = "";
+      continue;
+    }
+    if (character === "\"" || character === "'") { quote = character; continue; }
+    if ("([{".includes(character)) depth += 1;
+    else if (")]}".includes(character)) depth -= 1;
+    else if (character === "," && depth === 0) {
+      parts.push(text.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  parts.push(text.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+function inferArgumentKind(rawValue) {
+  const value = rawValue.trim();
+  if (/^["']/.test(value)) return "string";
+  if (/^vs\.[A-Za-z_]\w*$/.test(value)) return "format";
+  if (value.startsWith("[")) {
+    const values = value.slice(1, -1).split(",").map((entry) => entry.trim()).filter(Boolean);
+    return values.length && values.every((entry) => Number.isSafeInteger(Number(entry))) ? "intArray" : "floatArray";
+  }
+  if (Number.isSafeInteger(Number(value))) return "int";
+  if (Number.isFinite(Number(value))) return "float";
+  return "string";
+}
+
+function displayArgumentValue(rawValue, kind) {
+  const value = rawValue.trim();
+  if (kind === "string" && (value.startsWith("\"") || value.startsWith("'"))) {
+    try { return JSON.parse(value); } catch { return value.slice(1, -1); }
+  }
+  return value;
+}
+
+function hydrateArgumentDraft(name, operation) {
+  if (!operation || operation.kind !== "filter") return;
+  const line = source.value.split("\n")[operation.line] ?? "";
+  const start = line.indexOf("(", line.indexOf(`vs.core.${operation.namespace}.${operation.name}`));
+  const end = line.lastIndexOf(")");
+  if (start < 0 || end <= start) return;
+  const definition = filterDefinition(name);
+  const positionalCount = definition.input === "none" ? 0 : (definition.inputExpression?.split(",").length ?? 1);
+  argumentDrafts.delete(name);
+  const draft = getArgumentDraft(name);
+  for (const token of splitCallArguments(line.slice(start + 1, end)).slice(positionalCount)) {
+    const match = token.match(/^([A-Za-z_]\w*)\s*=\s*(.+)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    const existing = draft.find((argument) => argument.key === key);
+    if (existing) {
+      existing.value = displayArgumentValue(rawValue, existing.kind);
+    } else {
+      const kind = inferArgumentKind(rawValue);
+      draft.push({ key, label: key, kind, value: displayArgumentValue(rawValue, kind) });
+    }
+    if (name === "BlankClip") syncBlankClipDimensionFromArgument(key, displayArgumentValue(rawValue, existing?.kind ?? inferArgumentKind(rawValue)));
+  }
 }
 
 function renderGraph() {
   const parsed = parseScript();
   graphCount.textContent = String(parsed.length).padStart(2, "0");
   if (parsed[0]?.kind === "empty") { graphNodesTarget.innerHTML = '<p class="node-empty">Drop a library function here, or author a <code>vs.core.namespace.Function(…)</code> call, to plot it. The library remains available while the source record is empty.'; renderMinimap([]); return; }
-  const positions = parsed.map((node, index) => nodePositions.get(index) ?? { left: 8 + index * (55 / Math.max(1, parsed.length - 1)), top: node.name === "Output" ? 7 : 29 + (index % 2 ? 22 : 0) });
+  const positions = parsed.map((node, index) => nodePositions.get(index) ?? { left: 8 + index * (55 / Math.max(1, parsed.length - 1)), top: node.name === "Output" ? 1 : 29 + (index % 2 ? 22 : 0) });
   const wirePaths = parsed.slice(1).map((node, index) => {
     const start = positions[index]; const end = positions[index + 1];
     const wireClass = [node.kind === "output" ? "is-output" : "", node.kind === "draft" ? "is-draft" : ""].filter(Boolean).join(" ");
@@ -325,11 +620,17 @@ function removeReferenceLine(op) {
 
 function addNodeToGraph(name) {
   const info = functionInfo(name);
-  if (info.kind !== "video") return false;
-  const template = NODE_CALL_TEMPLATES[name];
-  if (template) insertSourceLine(template(dimensions), null);
+  const isVideo = info.kind === "video" || info.kind === "source" || info.kind === "filter";
+  if (!isVideo) return { added: false, error: "Only video functions can plot on the video route" };
+  let call;
+  try {
+    call = buildFilterCall(name);
+  } catch (error) {
+    return { added: false, error: error.message };
+  }
+  if (call) insertSourceLine(call, null);
   else insertSourceLine(null, `# Reference: vs.core.${info.namespace}.${name}(…)`);
-  return true;
+  return { added: true, executable: Boolean(call), call };
 }
 
 function insertSourceLine(call, referenceNote) {
@@ -357,30 +658,49 @@ function renderMinimap(parsed) {
 
 function selectFunction(name, { fromLibrary = false, index } = {}) {
   const info = functionInfo(name);
-  if (fromLibrary) selectedLibraryFunction = name;
+  if (fromLibrary || index !== undefined) selectedLibraryFunction = name;
   if (index !== undefined) selectedIndex = index;
   else if (fromLibrary) {
     const parsed = parseScript();
-    selectedIndex = parsed.findIndex((op) => op.name === name && op.kind !== "draft");
+    selectedIndex = parsed.findLastIndex((op) => op.name === name && op.kind !== "output");
   } else selectedIndex = -1;
+  const selectedOperation = selectedIndex >= 0 ? parseScript()[selectedIndex] : undefined;
+  hydrateArgumentDraft(name, selectedOperation);
+  const isVideo = info.kind === "video" || info.kind === "source" || info.kind === "filter";
+  const argumentCount = isVideo ? getArgumentDraft(name).length : 0;
   inspectorTitle.textContent = info.title;
   inspectorPath.textContent = info.namespace === "graph" ? info.signature : `vs.core.${info.namespace}.${info.title}`;
   const validated = VECTOR_VALIDATED_FUNCTIONS.has(name);
-  inspectorSpecs.innerHTML = `<dt>Call</dt><dd>${info.signature}</dd><dt>Role</dt><dd>${info.kind}</dd><dt>Validation</dt><dd>${validated ? "browser render vector" : "documented reference"}</dd><dt>Graph</dt><dd>${fromLibrary ? "library selection" : "plotted operation"}</dd>`;
-  inspectorNote.textContent = validated ? info.summary : `${info.summary} This entry is not presented as an executable preset.`;
+  inspectorSpecs.innerHTML = `<dt>Call</dt><dd>${info.signature}</dd><dt>Role</dt><dd>${info.kind}</dd><dt>Arguments</dt><dd>${argumentCount} configured</dd><dt>Validation</dt><dd>${validated ? "browser render vector" : "upstream on run"}</dd><dt>Graph</dt><dd>${fromLibrary ? "library selection" : "plotted operation"}</dd>`;
+  inspectorNote.textContent = validated
+    ? info.summary
+    : `${info.summary} Configure arguments below before adding it to the graph.`;
   dimensionControls.hidden = name !== "BlankClip";
   updateAddGraphControl();
+  renderArgumentControls();
   renderGraph();
-  if (fromLibrary) renderLibrary();
+  if (fromLibrary || index !== undefined) renderLibrary();
 }
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
 function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function selectedBlankClipLine() {
+  const parsed = parseScript();
+  const selected = selectedIndex >= 0 ? parsed[selectedIndex] : undefined;
+  if (selected?.name === "BlankClip") return selected.line;
+  return parsed.find((operation) => operation.name === "BlankClip")?.line ?? -1;
+}
 function updateBlankClipDimensions() {
-  const pattern = /([A-Za-z_]\w*\s*=\s*vs\.core\.std\.BlankClip\(width=)\d+([^)]*height=)\d+([^)]*\))/;
-  const match = source.value.match(pattern);
+  const lines = source.value.split("\n");
+  const lineIndex = selectedBlankClipLine();
+  if (lineIndex < 0) return false;
+  const pattern = /^(\s*[A-Za-z_]\w*\s*=\s*vs\.core\.std\.BlankClip\(width=)\d+([^)]*height=)\d+([^)]*\))$/;
+  const match = lines[lineIndex]?.match(pattern);
   if (!match) return false;
-  source.value = source.value.replace(pattern, `$1${dimensions.width}$2${dimensions.height}$3`);
+  const replacement = `${match[1]}${dimensions.width}${match[2]}${dimensions.height}${match[3]}`;
+  if (lines[lineIndex] === replacement) return false;
+  lines[lineIndex] = replacement;
+  source.value = lines.join("\n");
   return true;
 }
 function clampDimension(control, fallback) { const value = Number.parseInt(control.value, 10); const min = Number.parseInt(control.min, 10); const max = Number.parseInt(control.max, 10); return Number.isInteger(value) ? Math.min(max, Math.max(min, value)) : fallback; }
@@ -530,8 +850,9 @@ function startPlayback() {
 function updateAddGraphControl() {
   if (!addGraphButton) return;
   const info = functionInfo(selectedLibraryFunction);
-  addGraphButton.disabled = info.kind !== "video";
-  addGraphButton.title = info.kind !== "video" ? "Only video functions can plot on the video route" : "";
+  const isVideo = info.kind === "video" || info.kind === "source" || info.kind === "filter";
+  addGraphButton.disabled = !isVideo;
+  addGraphButton.title = !isVideo ? "Only video functions can plot on the video route" : "";
 }
 
 function formatThreadingStatus(threading) {
@@ -579,24 +900,89 @@ async function renderScript() {
   } finally { rendering = false; updateRunControl(); }
 }
 
+function syncBlankClipArgument(key, value) {
+  const argument = getArgumentDraft("BlankClip").find((entry) => entry.key === key);
+  if (argument) argument.value = String(value);
+}
+
+function syncBlankClipDimensionFromArgument(key, value) {
+  if (key !== "width" && key !== "height") return;
+  const control = key === "width" ? widthControl : heightControl;
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric)) return;
+  const min = Number.parseInt(control.min, 10);
+  const max = Number.parseInt(control.max, 10);
+  dimensions[key] = clamp(numeric, min, max);
+  control.value = String(dimensions[key]);
+  if (updateBlankClipDimensions()) touchSource("DIMENSIONS CHANGED");
+  else renderGraph();
+}
+
 run.addEventListener("click", renderScript);
 source.addEventListener("input", () => { markChanged("SOURCE CHANGED"); renderGraph(); clearStalePreview(); });
 source.addEventListener("keydown", (event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void renderScript(); } });
-widthControl.addEventListener("input", () => { dimensions.width = clampDimension(widthControl, dimensions.width); if (updateBlankClipDimensions()) touchSource("DIMENSIONS CHANGED"); selectFunction("BlankClip", { fromLibrary: true }); });
-heightControl.addEventListener("input", () => { dimensions.height = clampDimension(heightControl, dimensions.height); if (updateBlankClipDimensions()) touchSource("DIMENSIONS CHANGED"); selectFunction("BlankClip", { fromLibrary: true }); });
+widthControl.addEventListener("input", () => { dimensions.width = clampDimension(widthControl, dimensions.width); syncBlankClipArgument("width", dimensions.width); if (updateBlankClipDimensions()) touchSource("DIMENSIONS CHANGED"); selectFunction("BlankClip", { fromLibrary: true }); });
+heightControl.addEventListener("input", () => { dimensions.height = clampDimension(heightControl, dimensions.height); syncBlankClipArgument("height", dimensions.height); if (updateBlankClipDimensions()) touchSource("DIMENSIONS CHANGED"); selectFunction("BlankClip", { fromLibrary: true }); });
 librarySearch.addEventListener("input", renderLibrary);
 document.querySelectorAll(".library-tab").forEach((tab) => tab.addEventListener("click", () => { libraryKind = tab.textContent.toLowerCase(); document.querySelectorAll(".library-tab").forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === tab))); renderLibrary(); }));
 document.querySelector("[data-copy-call]").addEventListener("click", () => copySignature(functionInfo(selectedLibraryFunction).signature));
+document.querySelector("[data-insert-note]").addEventListener("click", () => {
+  const info = functionInfo(selectedLibraryFunction);
+  const signature = info.namespace === "graph" ? info.signature : `vs.core.${info.namespace}.${info.title}(…)`;
+  insertSourceLine(null, `# Reference: ${signature}`);
+  inspectorNote.textContent = "A reference note was inserted into the source record.";
+});
 document.querySelector("[data-add-graph]").addEventListener("click", () => {
   const name = selectedLibraryFunction;
-  if (!addNodeToGraph(name)) return;
-  const info = functionInfo(name);
-  inspectorNote.textContent = NODE_CALL_TEMPLATES[name]
-    ? "The call was appended before set_output(). Run the graph to validate it against the upstream core."
-    : "A reference draft was plotted. Replace the comment with an authored call and valid arguments to make it runnable.";
+  const result = addNodeToGraph(name);
+  if (!result.added) {
+    inspectorNote.textContent = result.error;
+    setGraphState("error", "ARGUMENTS INVALID");
+    return;
+  }
   selectFunction(name, { fromLibrary: true });
+  inspectorNote.textContent = result.executable
+    ? "The configured call was appended before set_output(). Run the graph to validate it against the upstream core."
+    : "A reference draft was plotted. Add named arguments, then add it again to generate a runnable call.";
 });
-document.querySelector("[data-insert-note]").addEventListener("click", () => { const info = functionInfo(selectedLibraryFunction); const note = `# Reference: ${info.signature}`; if (!source.value.includes(note)) insertSourceLine(null, note); source.focus(); inspectorNote.textContent = "A non-executable reference note was added. Replace it with an authored call and its valid arguments to plot it."; });
+addArgumentButton.addEventListener("click", () => {
+  const draft = getArgumentDraft(selectedLibraryFunction);
+  draft.push({ key: `argument${draft.length + 1}`, label: "Argument", kind: "string", value: "" });
+  renderArgumentControls();
+  argumentRows.querySelector("[data-argument-key]:last-of-type")?.focus();
+});
+argumentRows.addEventListener("input", (event) => {
+  const row = event.target.closest("[data-argument-row]");
+  if (!row) return;
+  const argument = getArgumentDraft(selectedLibraryFunction)[Number(row.dataset.argumentIndex)];
+  if (!argument) return;
+  if (event.target.matches("[data-argument-key]")) {
+    argument.key = event.target.value;
+    if (selectedLibraryFunction === "BlankClip") syncBlankClipDimensionFromArgument(argument.key, argument.value);
+  }
+  if (event.target.matches("[data-argument-value]")) {
+    argument.value = event.target.value;
+    if (selectedLibraryFunction === "BlankClip") syncBlankClipDimensionFromArgument(argument.key, argument.value);
+  }
+});
+argumentRows.addEventListener("change", (event) => {
+  const row = event.target.closest("[data-argument-row]");
+  if (!row) return;
+  const argument = getArgumentDraft(selectedLibraryFunction)[Number(row.dataset.argumentIndex)];
+  if (!argument) return;
+  if (event.target.matches("[data-argument-kind]")) {
+    argument.kind = event.target.value;
+    argument.value = "";
+    renderArgumentControls();
+  }
+});
+argumentRows.addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove-argument]");
+  if (!remove) return;
+  const row = remove.closest("[data-argument-row]");
+  getArgumentDraft(selectedLibraryFunction).splice(Number(row.dataset.argumentIndex), 1);
+  renderArgumentControls();
+});
 document.querySelector(".theme-toggle").addEventListener("click", (event) => {
   const highContrast = event.currentTarget.getAttribute("aria-pressed") !== "true";
   event.currentTarget.setAttribute("aria-pressed", String(highContrast));
@@ -617,7 +1003,10 @@ graphNodesTarget.addEventListener("drop", (event) => {
   event.preventDefault();
   graphNodesTarget.classList.remove("is-drop-target");
   const name = event.dataTransfer.getData("text/plain");
-  if (name) { selectFunction(name, { fromLibrary: true }); addNodeToGraph(name); }
+  if (!name) return;
+  selectFunction(name, { fromLibrary: true });
+  const result = addNodeToGraph(name);
+  if (!result.added) inspectorNote.textContent = result.error;
 });
 graphNodesTarget.addEventListener("keydown", (event) => {
   const node = event.target.closest("[data-graph-node]");

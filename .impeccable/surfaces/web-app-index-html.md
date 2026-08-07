@@ -25,6 +25,10 @@ Blueprint Graph: a graphite drafting-sheet authoring workspace with warm paper c
 
 Searching the full standard-core catalog and selecting an entry turns it into a contextual node-inspector reference while the authored Python calls visibly plot as a route across the blueprint canvas.
 
-## Open decisions
+## Interaction contract
 
-Draft-node placement is intentionally planning-only until the user writes the function's valid Python arguments. The upstream core remains the authority for availability, valid arguments, and node kinds at run time.
+- Nodes plot from the source record and are draggable (pointer drag or arrow-key nudge); layout persists for the session.
+- Creating a node: "Add to graph" or dragging a library entry onto the canvas appends a runnable call for the 17 render-vector-validated functions (values match `native/tests/vectors`), or a `# Reference:` draft for every other video function. Drafts plot dashed and run only after the author replaces them with valid arguments.
+- Delete removes the selected plotted node's call (or reference line); the program output node is not deletable.
+- The preview goes stale visibly: any source edit after a render clears the canvas and marks the output "awaiting render" until the next Run. Width/height edits rewrite the BlankClip call in place and never wipe the rest of the script.
+- The upstream core remains the authority for availability, valid arguments, and node kinds at run time.

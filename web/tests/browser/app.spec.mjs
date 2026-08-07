@@ -117,7 +117,9 @@ test.describe("production browser VapourSynth", () => {
       });
       page.on("pageerror", (error) => consoleErrors.push(String(error)));
 
-      await page.goto("/app/");
+      // GitHub Pages serves the project site under a repository subpath;
+      // visit the app there, not at the origin root.
+      await page.goto("/web/app/");
 
       // 1. Wait for Pyodide and the VapourSynth worker to be ready.
       const runtimeStatus = page.locator("[data-runtime-status]");

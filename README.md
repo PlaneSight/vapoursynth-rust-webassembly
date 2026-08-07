@@ -18,7 +18,7 @@ uv sync --locked
 npm run serve
 ```
 
-Open `http://localhost:4173/` — the root redirects to `/app/` (HTTP is required for ES modules and nested workers). `npm run serve` serves the production distribution with `uv run --locked python -m http.server 4173 --directory build/web`. The build applies the pinned upstream patch, compiles the Emscripten module, and runs the native suites (including the byte-exact corpus harness); generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
+Open `http://localhost:4173/` — the root redirects to `/app/` (ES modules and nested module workers need an HTTP(S) origin, not `file://`). `npm run serve` serves the production distribution with `uv run --locked python -m http.server 4173 --directory build/web`. The build applies the pinned upstream patch, compiles the Emscripten module, and runs the native suites (including the byte-exact corpus harness); generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
 
 ## Browser tests
 
@@ -27,7 +27,7 @@ npm run test:browser        # requires build/web (already built)
 npm run test:browser:build  # ./tools/build-browser.sh, then the tests
 ```
 
-`npm run test:browser` runs the Playwright spec in `web/tests/browser/` in headless Chromium against the production bundle in `build/web`, served from `build/web` at port 4173. GitHub Pages deploys `build/web` as the site root, so the deployed demo at `/` (redirecting to `/app/`) is the same distribution the tests exercise.
+`npm run test:browser` runs the Playwright spec in `web/tests/browser/` in headless Chromium against the production bundle in `build/web`, served under a subpath (`/web/app/`) so tests exercise the same base-path resolution as the GitHub Pages project site at `/vapoursynth-rust-webassembly/`. All demo URLs are relative, so the identical distribution works at any base path.
 
 ## Architecture
 

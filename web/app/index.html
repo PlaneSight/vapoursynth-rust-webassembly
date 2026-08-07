@@ -128,7 +128,12 @@
       .graph-wires path.is-output { stroke: var(--signal); }
       .graph-wires circle { fill: var(--ink-800); stroke: var(--draft); stroke-width: 2; }
       .graph-wires circle.is-output { stroke: var(--signal); }
-      .graph-node { position: absolute; width: min(15rem, 25%); min-width: 9.5rem; padding: 0; border: 1px solid var(--draft); background: var(--ink-900); color: var(--paper); box-shadow: 0 .7rem 1.5rem var(--shadow-ink); cursor: pointer; text-align: left; transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+      .graph-node { position: absolute; width: min(15rem, 25%); min-width: 9.5rem; padding: 0; border: 1px solid var(--draft); background: var(--ink-900); color: var(--paper); box-shadow: 0 .7rem 1.5rem var(--shadow-ink); cursor: grab; text-align: left; transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+      .graph-node.is-dragging { transition: none; z-index: 5; cursor: grabbing; box-shadow: 0 0 0 2px var(--draft-dim), 0 1rem 2rem var(--shadow-ink); }
+      .graph-node.is-draft { border-style: dashed; border-color: var(--draft-dim); }
+      .graph-node.is-draft .graph-node-header { background: transparent; }
+      .graph-wires path.is-draft { stroke-dasharray: 4 3; }
+      .graph-nodes.is-drop-target::after { content: ""; position: absolute; inset: 0; border: 1px dashed var(--signal); pointer-events: none; }
       .graph-node:hover { transform: translateY(-2px); box-shadow: 0 .9rem 1.75rem var(--shadow-ink); }
       .graph-node[aria-pressed="true"] { border-color: var(--paper); box-shadow: 0 0 0 2px var(--draft-dim), 0 .9rem 1.75rem var(--shadow-ink); }
       .graph-node[data-kind="output"] { border-color: var(--signal); }
@@ -137,6 +142,7 @@
       .node-mark { width: .56rem; height: .56rem; border: 1px solid currentColor; transform: rotate(45deg); }
       .node-namespace { margin-left: auto; color: var(--paper-muted); font-size: .56rem; font-weight: 400; }
       .node-body { padding: .55rem; color: var(--paper-muted); font-size: .62rem; line-height: 1.4; }
+      [data-output-state][data-state="changed"] { color: var(--draft); }
       .node-row { display: flex; justify-content: space-between; gap: .4rem; min-height: 1.3rem; border-bottom: 1px solid var(--line-subtle); }
       .node-row:last-child { border: 0; }
       .node-port { position: absolute; top: 50%; width: .75rem; height: .75rem; border: 2px solid var(--draft); border-radius: 50%; background: var(--ink-800); transform: translateY(-50%); }
@@ -236,7 +242,7 @@
             <div class="param-field"><label for="source-width">Width</label><input id="source-width" type="number" min="64" max="1920" step="1" value="320" data-graph-width data-graph-value="width"><span>px</span></div>
             <div class="param-field"><label for="source-height">Height</label><input id="source-height" type="number" min="64" max="1080" step="1" value="180" data-graph-height data-graph-value="height"><span>px</span></div>
           </div>
-          <div class="inspector-section"><div class="inspector-actions"><button class="blueprint-button" type="button" data-copy-call>Copy call</button><button class="blueprint-button signal" type="button" data-insert-note>Insert source note</button></div><p class="inspector-note" data-inspector-note>Library entries are reference material. An authored call is plotted only after its valid Python arguments exist in the source record.</p></div>
+          <div class="inspector-section"><div class="inspector-actions"><button class="blueprint-button signal" type="button" data-add-graph>Add to graph</button><button class="blueprint-button" type="button" data-copy-call>Copy call</button><button class="blueprint-button" type="button" data-insert-note>Insert source note</button></div><p class="inspector-note" data-inspector-note>Library entries are reference material. An authored call is plotted only after its valid Python arguments exist in the source record.</p></div>
         </aside>
 
         <section class="source-panel" aria-labelledby="source-title">
@@ -252,7 +258,7 @@ clip.set_output()</textarea></label>
 
       <details class="diagnostics" aria-label="Runtime diagnostics"><summary>Runtime diagnostics</summary><div class="diagnostics-toolbar"><button class="diagnostics-clear" type="button">Clear log</button></div><pre class="diagnostics-log" aria-live="polite"></pre></details>
       <details class="diagnostics limitations" aria-label="Runtime limitations"><summary>Runtime boundaries</summary><div class="limitations-body"><p><strong>Authoring capabilities:</strong> <code data-authoring-caps>waiting for the runtime…</code></p><p>The library is a documented standard-core reference. Entries marked <strong>vector</strong> have browser render-vector coverage; every other entry must be authored with valid arguments and is verified by the upstream core only when it runs.</p><ul><li>One active graph at a time; program preview is RGBA8.</li><li>Graph plans permit 64 operations, 64 arguments each, and 16 outputs.</li><li>Native plugins and browser media decoding are not provided.</li></ul></div></details>
-      <footer class="footer"><span>Browser core linked</span><span>Blueprint view · 1:1</span><span>Keyboard: Ctrl / ⌘ + Enter runs graph</span></footer>
+      <footer class="footer"><span>Browser core linked</span><span>Blueprint view · drag nodes · Del removes · Ctrl / ⌘ + Enter runs</span></footer>
     </main>
     <script type="module" src="./demo.mjs"></script>
   </body>

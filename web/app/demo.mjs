@@ -17,6 +17,30 @@ const VECTOR_VALIDATED_FUNCTIONS = new Set([
   "AddBorders", "BlankClip", "Crop", "Expr", "FlipHorizontal", "FlipVertical", "Invert", "Levels", "Lut", "Maximum", "Median", "Minimum", "ShufflePlanes", "StackHorizontal", "StackVertical", "Transpose", "Turn180",
 ]);
 
+// Runnable call templates for the render-vector-validated subset, matching the
+// corpus plans in native/tests/vectors byte for byte (same argument values,
+// float lists kept floats, colorfamily as the RGB enum int). Anything outside
+// this table plots as a reference draft until the author writes valid args.
+const NODE_CALL_TEMPLATES = Object.freeze({
+  BlankClip: ({ width, height }) => `clip = vs.core.std.BlankClip(width=${width}, height=${height}, format=vs.RGB24, color=[32.0, 96.0, 224.0])`,
+  AddBorders: () => "clip = vs.core.std.AddBorders(clip, left=7, right=3, top=5, bottom=9, color=[0.0, 0.0, 0.0])",
+  Crop: () => "clip = vs.core.std.Crop(clip, left=40, right=40, top=30, bottom=30)",
+  Expr: () => 'clip = vs.core.std.Expr(clip, expr="x")',
+  FlipHorizontal: () => "clip = vs.core.std.FlipHorizontal(clip)",
+  FlipVertical: () => "clip = vs.core.std.FlipVertical(clip)",
+  Invert: () => "clip = vs.core.std.Invert(clip)",
+  Levels: () => "clip = vs.core.std.Levels(clip, min_in=[0.0], max_in=[255.0], gamma=[1.0], min_out=[16.0], max_out=[235.0])",
+  Lut: () => "clip = vs.core.std.Lut(clip, lut=list(range(255, -1, -1)))",
+  Maximum: () => "clip = vs.core.std.Maximum(clip)",
+  Median: () => "clip = vs.core.std.Median(clip)",
+  Minimum: () => "clip = vs.core.std.Minimum(clip)",
+  ShufflePlanes: () => "clip = vs.core.std.ShufflePlanes(clip, planes=[0, 1, 2], colorfamily=2)",
+  StackHorizontal: () => "clip = vs.core.std.StackHorizontal([clip, clip])",
+  StackVertical: () => "clip = vs.core.std.StackVertical([clip, clip])",
+  Transpose: () => "clip = vs.core.std.Transpose(clip)",
+  Turn180: () => "clip = vs.core.std.Turn180(clip)",
+});
+
 const NODE_INFO = {
   BlankClip: { namespace: "std", title: "BlankClip", summary: "Creates a constant video clip. This browser graph exposes width and height directly.", signature: "BlankClip(width, height, format, color, …)", kind: "source" },
   Invert: { namespace: "std", title: "Invert", summary: "Inverts every sample in the supplied clip while preserving the clip's geometry.", signature: "Invert(clip, planes=None)", kind: "filter" },
@@ -42,14 +66,18 @@ const dimensionControls = document.querySelector("[data-dimension-controls]");
 const libraryGroups = document.querySelector("[data-library-groups]");
 const librarySearch = document.querySelector("[data-library-search]");
 const libraryCount = document.querySelector("[data-library-count]");
+const addGraphButton = document.querySelector("[data-add-graph]");
 const diagnostics = createDiagnosticConsole();
 
 let runtimeReady = false;
 let rendering = false;
 let graphState = "ready";
-let selected = "BlankClip";
 let selectedLibraryFunction = "BlankClip";
 let libraryKind = "all";
+let selectedIndex = -1;
+let rendered = false;
+let renderedSource = "";
+const nodePositions = new Map();
 const dimensions = { width: 320, height: 180 };
 
 window.addEventListener("error", (event) => diagnostics.error("window", event.message || "Unhandled browser error", { filename: event.filename, lineno: event.lineno }));
@@ -76,59 +104,229 @@ function renderLibrary() {
   const count = groups.reduce((total, entry) => total + entry.names.length, 0);
   libraryCount.textContent = `${count} refs`;
   if (!groups.length) { libraryGroups.innerHTML = '<p class="library-empty">No matching standard-core functions.</p>'; return; }
-  libraryGroups.innerHTML = groups.map((entry, index) => `<details class="function-group" ${index < 2 || query ? "open" : ""}><summary>${entry.group}<span>${entry.names.length}</span></summary><div class="function-list">${entry.names.map((name) => { const validated = VECTOR_VALIDATED_FUNCTIONS.has(name); return `<button class="function-entry" type="button" data-library-function="${name}" aria-current="${selectedLibraryFunction === name}" aria-label="${name}, ${validated ? "browser render vector" : "documented reference"}">${name}<span class="function-state ${validated ? "verified" : ""}">${validated ? "vector" : "ref"}</span></button>`; }).join("")}</div></details>`).join("");
+  libraryGroups.innerHTML = groups.map((entry, index) => `<details class="function-group" ${index < 2 || query ? "open" : ""}><summary>${entry.group}<span>${entry.names.length}</span></summary><div class="function-list">${entry.names.map((name) => { const validated = VECTOR_VALIDATED_FUNCTIONS.has(name); return `<button class="function-entry" type="button" draggable="true" data-library-function="${name}" aria-current="${selectedLibraryFunction === name}" aria-label="${name}, ${validated ? "browser render vector" : "documented reference"}. Drag onto the graph to add it.">${name}<span class="function-state ${validated ? "verified" : ""}">${validated ? "vector" : "ref"}</span></button>`; }).join("")}</div></details>`).join("");
   libraryGroups.querySelectorAll("[data-library-function]").forEach((button) => button.addEventListener("click", () => selectFunction(button.dataset.libraryFunction, { fromLibrary: true })));
 }
 
+function lineOf(charIndex) { return source.value.slice(0, charIndex).split("\n").length - 1; }
+
 function parseScript() {
   const operations = [];
-  const calls = source.value.matchAll(/^\s*([A-Za-z_]\w*)\s*=\s*vs\.core\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\(/gm);
-  for (const match of calls) operations.push({ id: match[1], namespace: match[2], name: match[3], kind: "filter" });
+  const callPattern = /^\s*([A-Za-z_]\w*)\s*=\s*vs\.core\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\(/gm;
+  for (const match of source.value.matchAll(callPattern)) operations.push({ id: match[1], namespace: match[2], name: match[3], kind: "filter", line: lineOf(match.index) });
+  const referencePattern = /^\s*#\s*Reference:\s*vs\.core\.([A-Za-z_]\w*)\.([A-Za-z_]\w*)\(/gm;
+  for (const match of source.value.matchAll(referencePattern)) operations.push({ id: `ref-${operations.length}`, namespace: match[1], name: match[2], kind: "draft", line: lineOf(match.index) });
   const outputs = [...source.value.matchAll(/^\s*([A-Za-z_]\w*)\.set_output\((\d*)\)/gm)];
-  if (outputs.length) operations.push({ id: outputs[0][1], namespace: "graph", name: "Output", kind: "output" });
-  return operations.length ? operations : [{ id: "graph", namespace: "graph", name: "No plotted calls", kind: "empty" }];
+  if (outputs.length) operations.push({ id: outputs[0][1], namespace: "graph", name: "Output", kind: "output", line: lineOf(outputs[0].index) });
+  operations.sort((a, b) => a.line - b.line);
+  return operations.length ? operations : [{ id: "graph", namespace: "graph", name: "No plotted calls", kind: "empty", line: 0 }];
 }
 
 function renderGraph() {
   const parsed = parseScript();
   graphCount.textContent = String(parsed.length).padStart(2, "0");
-  if (parsed[0]?.kind === "empty") { graphNodesTarget.innerHTML = '<p class="node-empty">Author a <code>vs.core.namespace.Function(…)</code> call to plot it here. The library remains available while the source record is empty.</p>'; return; }
-  const positions = parsed.map((_, index) => ({ left: 8 + index * (55 / Math.max(1, parsed.length - 1)), top: 29 + (index % 2 ? 22 : 0) }));
+  if (parsed[0]?.kind === "empty") { graphNodesTarget.innerHTML = '<p class="node-empty">Drop a library function here, or author a <code>vs.core.namespace.Function(…)</code> call, to plot it. The library remains available while the source record is empty.</p>'; renderMinimap([]); return; }
+  const positions = parsed.map((_, index) => nodePositions.get(index) ?? { left: 8 + index * (55 / Math.max(1, parsed.length - 1)), top: 29 + (index % 2 ? 22 : 0) });
   const wirePaths = parsed.slice(1).map((node, index) => {
-    const start = positions[index]; const end = positions[index + 1]; const output = node.kind === "output" ? " is-output" : "";
-    return `<path class="${output}" d="M ${start.left + 16} ${start.top + 9} C ${start.left + 22} ${start.top + 9}, ${end.left - 6} ${end.top + 9}, ${end.left} ${end.top + 9}"/>`;
+    const start = positions[index]; const end = positions[index + 1];
+    const wireClass = [node.kind === "output" ? "is-output" : "", node.kind === "draft" ? "is-draft" : ""].filter(Boolean).join(" ");
+    return `<path class="${wireClass}" data-from="${index}" d="M ${start.left + 16} ${start.top + 9} C ${start.left + 22} ${start.top + 9}, ${end.left - 6} ${end.top + 9}, ${end.left} ${end.top + 9}"/>`;
   }).join("");
   const nodes = parsed.map((node, index) => {
-    const info = functionInfo(node.name); const active = selected === node.name;
-    const body = node.name === "BlankClip" ? `<div class="node-row"><span>width</span><strong>${dimensions.width}</strong></div><div class="node-row"><span>height</span><strong>${dimensions.height}</strong></div><div class="node-row"><span>format</span><strong>RGB24</strong></div>` : node.name === "Output" ? `<div class="node-row"><span>index</span><strong>0</strong></div><div class="node-row"><span>preview</span><strong>RGBA8</strong></div>` : `<div class="node-row"><span>input</span><strong>clip</strong></div><div class="node-row"><span>result</span><strong>node</strong></div>`;
+    const info = functionInfo(node.name); const active = selectedIndex === index;
+    const draftClass = node.kind === "draft" ? " is-draft" : "";
+    const body = node.kind === "draft"
+      ? `<div class="node-row"><span>input</span><strong>clip</strong></div><div class="node-row"><span>state</span><strong>reference</strong></div>`
+      : node.name === "BlankClip" ? `<div class="node-row"><span>width</span><strong>${dimensions.width}</strong></div><div class="node-row"><span>height</span><strong>${dimensions.height}</strong></div><div class="node-row"><span>format</span><strong>RGB24</strong></div>` : node.name === "Output" ? `<div class="node-row"><span>index</span><strong>0</strong></div><div class="node-row"><span>preview</span><strong>RGBA8</strong></div>` : `<div class="node-row"><span>input</span><strong>clip</strong></div><div class="node-row"><span>result</span><strong>node</strong></div>`;
     const content = node.name === "Output" ? `<div class="graph-node-header"><span class="node-mark"></span>${info.title}<span class="node-namespace">output 0</span></div><canvas width="320" height="180" aria-label="Rendered VapourSynth frame"></canvas><div class="node-body"><span>worker preview</span><span data-output-state>awaiting render</span></div>` : `<div class="graph-node-header"><span class="node-mark"></span>${info.title}<span class="node-namespace">${node.namespace}</span></div><div class="node-body">${body}</div>`;
-    return `<button class="graph-node ${node.name === "Output" ? "program-node" : ""}" type="button" data-graph-node="${node.name}" data-index="${index}" data-kind="${node.kind}" aria-pressed="${active}" style="left:${positions[index].left}%;top:${positions[index].top}%">${index > 0 ? '<span class="node-port in" aria-hidden="true"></span>' : ""}${content}${index < parsed.length - 1 ? '<span class="node-port out" aria-hidden="true"></span>' : ""}</button>`;
+    return `<button class="graph-node ${node.name === "Output" ? "program-node" : ""}${draftClass}" type="button" data-graph-node="${node.name}" data-index="${index}" data-kind="${node.kind}" aria-pressed="${active}" aria-label="${info.title}${node.kind === "draft" ? ", reference draft" : ""}. Drag to move, Delete to remove." style="left:${positions[index].left}%;top:${positions[index].top}%">${index > 0 ? '<span class="node-port in" aria-hidden="true"></span>' : ""}${content}${index < parsed.length - 1 ? '<span class="node-port out" aria-hidden="true"></span>' : ""}</button>`;
   }).join("");
   graphNodesTarget.innerHTML = `<svg class="graph-wires" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${wirePaths}</svg>${nodes}`;
-  graphNodesTarget.querySelectorAll("[data-graph-node]").forEach((node) => node.addEventListener("click", () => selectFunction(node.dataset.graphNode)));
+  graphNodesTarget.querySelectorAll("[data-graph-node]").forEach((node) => {
+    const index = Number(node.dataset.index);
+    node.addEventListener("click", () => selectFunction(node.dataset.graphNode, { index }));
+    attachNodeDrag(node, index);
+  });
+  renderMinimap(parsed);
   const nextCanvas = graphNodesTarget.querySelector("canvas");
   if (!nextCanvas) return;
   if (canvas && canvas !== nextCanvas) nextCanvas.replaceWith(canvas);
   else canvas = nextCanvas;
 }
 
-function selectFunction(name, { fromLibrary = false } = {}) {
+function attachNodeDrag(nodeEl, index) {
+  nodeEl.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const panel = graphNodesTarget;
+    const panelRect = panel.getBoundingClientRect();
+    const nodeRect = nodeEl.getBoundingClientRect();
+    const widthPct = (nodeRect.width / panelRect.width) * 100;
+    const heightPct = (nodeRect.height / panelRect.height) * 100;
+    const startX = event.clientX; const startY = event.clientY;
+    const startLeft = ((nodeRect.left - panelRect.left) / panelRect.width) * 100;
+    const startTop = ((nodeRect.top - panelRect.top) / panelRect.height) * 100;
+    nodeEl.setPointerCapture?.(event.pointerId);
+    let moved = false;
+    const onMove = (moveEvent) => {
+      if (moveEvent.pointerId !== event.pointerId) return;
+      const left = clamp(startLeft + ((moveEvent.clientX - startX) / panelRect.width) * 100, 0, Math.max(0, 100 - widthPct));
+      const top = clamp(startTop + ((moveEvent.clientY - startY) / panelRect.height) * 100, 0, Math.max(0, 100 - heightPct));
+      nodeEl.style.left = `${left}%`; nodeEl.style.top = `${top}%`;
+      nodeEl.classList.add("is-dragging");
+      moved = true;
+      updateWiresAround(index);
+    };
+    const onUp = (upEvent) => {
+      if (upEvent.pointerId !== event.pointerId) return;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      nodeEl.classList.remove("is-dragging");
+      if (moved) nodePositions.set(index, { left: parseFloat(nodeEl.style.left), top: parseFloat(nodeEl.style.top) });
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  });
+}
+
+function updateWiresAround(index) {
+  graphNodesTarget.querySelectorAll(".graph-wires path").forEach((path) => {
+    const from = Number(path.dataset.from);
+    if (from === index - 1 || from === index) path.setAttribute("d", wirePathBetween(from, from + 1));
+  });
+}
+
+function wirePathBetween(fromIndex, toIndex) {
+  const nodes = graphNodesTarget.querySelectorAll("[data-graph-node]");
+  const from = nodes[fromIndex]; const to = nodes[toIndex];
+  if (!from || !to) return "";
+  const startLeft = parseFloat(from.style.left); const startTop = parseFloat(from.style.top);
+  const endLeft = parseFloat(to.style.left); const endTop = parseFloat(to.style.top);
+  return `M ${startLeft + 16} ${startTop + 9} C ${startLeft + 22} ${startTop + 9}, ${endLeft - 6} ${endTop + 9}, ${endLeft} ${endTop + 9}`;
+}
+
+function nudgeNode(index, dx, dy) {
+  const node = graphNodesTarget.querySelector(`[data-graph-node][data-index="${index}"]`);
+  if (!node) return;
+  const panelRect = graphNodesTarget.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+  const widthPct = (nodeRect.width / panelRect.width) * 100;
+  const heightPct = (nodeRect.height / panelRect.height) * 100;
+  const current = nodePositions.get(index) ?? { left: parseFloat(node.style.left) || 0, top: parseFloat(node.style.top) || 0 };
+  const next = { left: clamp(current.left + dx, 0, Math.max(0, 100 - widthPct)), top: clamp(current.top + dy, 0, Math.max(0, 100 - heightPct)) };
+  nodePositions.set(index, next);
+  node.style.left = `${next.left}%`; node.style.top = `${next.top}%`;
+  updateWiresAround(index);
+}
+
+function removeNodeAt(index) {
+  const parsed = parseScript();
+  const op = parsed[index];
+  if (!op || op.kind === "output" || op.kind === "empty") return;
+  if (op.kind === "draft") removeReferenceLine(op); else removeCallFromSource(op);
+  nodePositions.delete(index);
+  for (let shifted = index + 1; shifted < parsed.length; shifted += 1) {
+    const position = nodePositions.get(shifted);
+    if (position) { nodePositions.set(shifted - 1, position); nodePositions.delete(shifted); }
+  }
+  touchSource("NODE REMOVED");
+  const nextSelection = parsed[Math.max(0, index - 1)];
+  selectFunction(nextSelection?.name ?? "BlankClip", { fromLibrary: nextSelection === undefined });
+}
+
+function removeCallFromSource(op) {
+  const lines = source.value.split("\n");
+  const pattern = new RegExp(`^\\s*${escapeRegExp(op.id)}\\s*=\\s*vs\\.core\\.`);
+  if (!pattern.test(lines[op.line] ?? "")) return;
+  let depth = 0; let end = op.line;
+  do { for (const character of lines[end] ?? "") { if (character === "(") depth += 1; else if (character === ")") depth -= 1; } end += 1; } while (depth > 0 && end < lines.length);
+  lines.splice(op.line, end - op.line);
+  source.value = lines.join("\n");
+}
+
+function removeReferenceLine(op) {
+  const lines = source.value.split("\n");
+  const pattern = new RegExp(`^\\s*#\\s*Reference:\\s*vs\\.core\\.${escapeRegExp(op.namespace)}\\.${escapeRegExp(op.name)}\\(`);
+  if (!pattern.test(lines[op.line] ?? "")) return;
+  lines.splice(op.line, 1);
+  source.value = lines.join("\n");
+}
+
+function addNodeToGraph(name) {
   const info = functionInfo(name);
-  selected = name;
+  if (info.kind !== "video") return false;
+  const template = NODE_CALL_TEMPLATES[name];
+  if (template) insertSourceLine(template(dimensions), null);
+  else insertSourceLine(null, `# Reference: vs.core.${info.namespace}.${name}(…)`);
+  return true;
+}
+
+function insertSourceLine(call, referenceNote) {
+  const block = referenceNote ? `${referenceNote}\n${call ?? ""}`.trimEnd() : call;
+  const outputMatch = source.value.match(/^\s*[A-Za-z_]\w*\s*\.set_output\(/m);
+  source.value = outputMatch
+    ? `${source.value.slice(0, outputMatch.index)}${block}\n${source.value.slice(outputMatch.index)}`
+    : `${source.value.trimEnd()}\n${block}\n`;
+  touchSource("NODE ADDED");
+}
+
+function renderMinimap(parsed) {
+  const svg = document.querySelector(".minimap svg");
+  if (!svg) return;
+  const count = Math.min(parsed.length, 4);
+  const rects = []; const points = [];
+  for (let index = 0; index < count; index += 1) {
+    const x = 10 + index * 26; const y = 24 + (index % 2 ? 9 : 0);
+    rects.push(`<rect x="${x}" y="${y}" width="20" height="13"/>`);
+    points.push(`${x + 10},${y + 6}`);
+  }
+  const route = count > 1 ? `<path d="M ${points.join(" L ")}"/>` : "";
+  svg.innerHTML = `<rect x="2" y="2" width="116" height="66"/>${rects.join("")}${route}`;
+}
+
+function selectFunction(name, { fromLibrary = false, index } = {}) {
+  const info = functionInfo(name);
   if (fromLibrary) selectedLibraryFunction = name;
+  if (index !== undefined) selectedIndex = index;
+  else if (fromLibrary) {
+    const parsed = parseScript();
+    selectedIndex = parsed.findIndex((op) => op.name === name && op.kind !== "draft");
+  } else selectedIndex = -1;
   inspectorTitle.textContent = info.title;
   inspectorPath.textContent = info.namespace === "graph" ? info.signature : `vs.core.${info.namespace}.${info.title}`;
   const validated = VECTOR_VALIDATED_FUNCTIONS.has(name);
   inspectorSpecs.innerHTML = `<dt>Call</dt><dd>${info.signature}</dd><dt>Role</dt><dd>${info.kind}</dd><dt>Validation</dt><dd>${validated ? "browser render vector" : "documented reference"}</dd><dt>Graph</dt><dd>${fromLibrary ? "library selection" : "plotted operation"}</dd>`;
   inspectorNote.textContent = validated ? info.summary : `${info.summary} This entry is not presented as an executable preset.`;
   dimensionControls.hidden = name !== "BlankClip";
+  updateAddGraphControl();
   renderGraph();
   if (fromLibrary) renderLibrary();
 }
 
-function generateSource() { return `import vapoursynth as vs\n\nclip = vs.core.std.BlankClip(width=${dimensions.width}, height=${dimensions.height}, format=vs.RGB24, color=[184.0, 132.0, 58.0])\nclip = vs.core.std.Invert(clip)\nclip.set_output()`; }
+function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function updateBlankClipDimensions() {
+  const pattern = /([A-Za-z_]\w*\s*=\s*vs\.core\.std\.BlankClip\(width=)\d+([^)]*height=)\d+([^)]*\))/;
+  const match = source.value.match(pattern);
+  if (!match) return false;
+  source.value = source.value.replace(pattern, `$1${dimensions.width}$2${dimensions.height}$3`);
+  return true;
+}
 function clampDimension(control, fallback) { const value = Number.parseInt(control.value, 10); const min = Number.parseInt(control.min, 10); const max = Number.parseInt(control.max, 10); return Number.isInteger(value) ? Math.min(max, Math.max(min, value)) : fallback; }
 function markChanged(message = "CHANGED") { setGraphState("changed", message); }
+function touchSource(message) { markChanged(message); renderGraph(); clearStalePreview(); }
+function clearStalePreview() {
+  if (!rendered || renderedSource === source.value) return;
+  rendered = false;
+  if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+  document.querySelectorAll("[data-output-state]").forEach((target) => { target.textContent = "awaiting render"; target.dataset.state = "changed"; });
+}
+function updateAddGraphControl() {
+  if (!addGraphButton) return;
+  const info = functionInfo(selectedLibraryFunction);
+  addGraphButton.disabled = info.kind !== "video";
+  addGraphButton.title = info.kind !== "video" ? "Only video functions can plot on the video route" : "";
+}
 
 async function refreshStatus() {
   setStatus("Starting browser workers…", "loading");
@@ -146,21 +344,31 @@ async function renderScript() {
     const scriptAtStart = source.value; const { outputs } = await client.runScript(scriptAtStart, "editor.vpy");
     const output = outputs.find(({ index }) => index === 0); if (!output) throw new Error("the script did not register output 0 with clip.set_output()");
     const frame = await client.renderOutput(output.index); drawRgbaFrame(canvas, frame);
+    rendered = true; renderedSource = scriptAtStart;
     setStatus(`Rendered ${frame.width}×${frame.height} RGBA8`, "ready"); setGraphState("ready", `RENDERED ${frame.width}×${frame.height}`);
     document.querySelectorAll("[data-output-state]").forEach((target) => { target.textContent = `${frame.width}×${frame.height}`; target.dataset.state = "ready"; });
-  } catch (error) { const message = `${error.code ?? "error"}: ${error.message}`; diagnostics.error("render", message, error.stack); setStatus(message, "error"); setGraphState("error", "RENDER FAILED"); }
+  } catch (error) { const message = `${error.code ?? "error"}: ${error.message}`; diagnostics.error("render", message, error.stack); setStatus(message, "error"); setGraphState("error", "RENDER FAILED"); clearStalePreview(); }
   finally { rendering = false; updateRunControl(); }
 }
 
 run.addEventListener("click", renderScript);
-source.addEventListener("input", () => { markChanged("SOURCE CHANGED"); renderGraph(); });
+source.addEventListener("input", () => { markChanged("SOURCE CHANGED"); renderGraph(); clearStalePreview(); });
 source.addEventListener("keydown", (event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void renderScript(); } });
-widthControl.addEventListener("input", () => { dimensions.width = clampDimension(widthControl, dimensions.width); source.value = generateSource(); markChanged(); selectFunction("BlankClip"); });
-heightControl.addEventListener("input", () => { dimensions.height = clampDimension(heightControl, dimensions.height); source.value = generateSource(); markChanged(); selectFunction("BlankClip"); });
+widthControl.addEventListener("input", () => { dimensions.width = clampDimension(widthControl, dimensions.width); if (updateBlankClipDimensions()) touchSource("DIMENSIONS CHANGED"); selectFunction("BlankClip", { fromLibrary: true }); });
+heightControl.addEventListener("input", () => { dimensions.height = clampDimension(heightControl, dimensions.height); if (updateBlankClipDimensions()) touchSource("DIMENSIONS CHANGED"); selectFunction("BlankClip", { fromLibrary: true }); });
 librarySearch.addEventListener("input", renderLibrary);
 document.querySelectorAll(".library-tab").forEach((tab) => tab.addEventListener("click", () => { libraryKind = tab.textContent.toLowerCase(); document.querySelectorAll(".library-tab").forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === tab))); renderLibrary(); }));
 document.querySelector("[data-copy-call]").addEventListener("click", async () => { const text = functionInfo(selectedLibraryFunction).signature; try { await navigator.clipboard.writeText(text); inspectorNote.textContent = "Function call copied to the clipboard."; } catch { inspectorNote.textContent = `Copy this call: ${text}`; } });
-document.querySelector("[data-insert-note]").addEventListener("click", () => { const info = functionInfo(selectedLibraryFunction); const note = `# Reference: ${info.signature}`; if (!source.value.includes(note)) source.value = `${source.value.trimEnd()}\n\n${note}\n`; source.focus(); markChanged("SOURCE NOTE ADDED"); renderGraph(); inspectorNote.textContent = "A non-executable reference note was added. Replace it with an authored call and its valid arguments to plot it."; });
+document.querySelector("[data-add-graph]").addEventListener("click", () => {
+  const name = selectedLibraryFunction;
+  if (!addNodeToGraph(name)) return;
+  const info = functionInfo(name);
+  inspectorNote.textContent = NODE_CALL_TEMPLATES[name]
+    ? "The call was appended before set_output(). Run the graph to validate it against the upstream core."
+    : "A reference draft was plotted. Replace the comment with an authored call and valid arguments to make it runnable.";
+  selectFunction(name, { fromLibrary: true });
+});
+document.querySelector("[data-insert-note]").addEventListener("click", () => { const info = functionInfo(selectedLibraryFunction); const note = `# Reference: ${info.signature}`; if (!source.value.includes(note)) insertSourceLine(null, note); source.focus(); inspectorNote.textContent = "A non-executable reference note was added. Replace it with an authored call and its valid arguments to plot it."; });
 document.querySelector(".theme-toggle").addEventListener("click", (event) => {
   const highContrast = event.currentTarget.getAttribute("aria-pressed") !== "true";
   event.currentTarget.setAttribute("aria-pressed", String(highContrast));
@@ -169,8 +377,35 @@ document.querySelector(".theme-toggle").addEventListener("click", (event) => {
   else document.documentElement.removeAttribute("data-contrast");
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", highContrast ? "#0e0d0b" : "#171512");
 });
+libraryGroups.addEventListener("dragstart", (event) => {
+  const button = event.target.closest("[data-library-function]");
+  if (!button) return;
+  event.dataTransfer.setData("text/plain", button.dataset.libraryFunction);
+  event.dataTransfer.effectAllowed = "copy";
+});
+graphNodesTarget.addEventListener("dragover", (event) => { if (event.dataTransfer.types.includes("text/plain")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; graphNodesTarget.classList.add("is-drop-target"); } });
+graphNodesTarget.addEventListener("dragleave", () => graphNodesTarget.classList.remove("is-drop-target"));
+graphNodesTarget.addEventListener("drop", (event) => {
+  event.preventDefault();
+  graphNodesTarget.classList.remove("is-drop-target");
+  const name = event.dataTransfer.getData("text/plain");
+  if (name) { selectFunction(name, { fromLibrary: true }); addNodeToGraph(name); }
+});
+graphNodesTarget.addEventListener("keydown", (event) => {
+  const node = event.target.closest("[data-graph-node]");
+  if (!node) return;
+  const index = Number(node.dataset.index);
+  if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); removeNodeAt(index); }
+  else if (event.key.startsWith("Arrow")) {
+    event.preventDefault();
+    const step = event.shiftKey ? 5 : 1;
+    const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+    const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+    nudgeNode(index, dx, dy);
+  }
+});
 
-renderLibrary(); selectFunction("BlankClip");
+renderLibrary(); selectFunction("BlankClip", { fromLibrary: true });
 window.addEventListener("pagehide", () => client.close(), { once: true });
 refreshStatus().catch((error) => { runtimeReady = false; diagnostics.error("startup", error.message, error.stack); setStatus(`startup-error: ${error.message}`, "error"); updateRunControl(); });
 

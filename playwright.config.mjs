@@ -28,8 +28,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "python3 -m http.server 4173 --directory build/web",
-    url: `${BASE_URL}/app/`,
+    // Serve the same distribution under a subpath so tests exercise the
+    // base-path resolution GitHub Pages uses for a project site
+    // (/vapoursynth-rust-webassembly/), not just root hosting.
+    command: "python3 -m http.server 4173 --directory build",
+    url: `${BASE_URL}/web/app/`,
     reuseExistingServer: false,
     timeout: 30_000,
   },

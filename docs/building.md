@@ -32,7 +32,7 @@ Activate Emscripten 3.1.68 in the current shell, then run:
 npm run serve
 ```
 
-Open `http://localhost:4173/` — the root redirects to `/app/` (HTTP is required for ES modules and nested workers). `npm run serve` runs `uv run --locked python -m http.server 4173 --directory build/web`. The build applies the locked upstream patch only while compiling, restores the submodule before exit, runs the native render-invert and ES-module tests, and stages the deployable site in `build/web/`.
+Open `http://localhost:4173/` — the root redirects to `/app/` (ES modules and nested module workers need an HTTP(S) origin, not `file://`). `npm run serve` runs `uv run --locked python -m http.server 4173 --directory build/web`. The build applies the locked upstream patch only while compiling, restores the submodule before exit, runs the native render-invert and ES-module tests, and stages the deployable site in `build/web/`.
 
 Generated files belong only in `build/`: `build/emscripten/` holds Meson/Emscripten output, `build/web/` holds the browser distribution, and `build/test/` is reserved for test output. Do not hand-edit generated files.
 
@@ -45,7 +45,7 @@ npm run test:browser        # requires an existing build/web
 npm run test:browser:build  # ./tools/build-browser.sh, then the tests
 ```
 
-`npm run test:browser` invokes `playwright test`; the Playwright config starts its own server (`python3 -m http.server 4173 --directory build/web`), runs headless Chromium, and writes the HTML report to `build/test/playwright-report/`. GitHub Pages deploys `build/web` as the site root (see `.github/workflows/static.yml`), so `/` and `/app/` on the deployed site match this local distribution server.
+`npm run test:browser` invokes `playwright test`; the Playwright config starts its own server (`python3 -m http.server 4173 --directory build`), runs headless Chromium, and writes the HTML report to `build/test/playwright-report/`. The suite mounts the distribution under `/web/app/` (not the origin root) so relative asset resolution matches the GitHub Pages project-site base path `/vapoursynth-rust-webassembly/` (see `.github/workflows/static.yml`).
 
 ## Isolated Docker builds
 

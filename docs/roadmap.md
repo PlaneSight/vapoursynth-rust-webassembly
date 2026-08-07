@@ -18,7 +18,9 @@ The package exposes `vs.core`, `VideoNode`, format constants, function namespace
 
 ## 4. Multi-frame / WebCodecs
 
-Add WebCodecs input/output adapters, timeline metadata, multiple frames, and transferable-buffer transport. The generation-checked multi-frame render path already exists (`render_output(index, frame)`).
+Expose generation-checked clip metadata (`numFrames`, `fpsNum` / `fpsDen`, dimensions, and format), then drive playback and seeking through the existing `render_output(index, frame)` path with bounded queues, backpressure, cancellation, and deterministic frame release. Single-frame RGBA8 `ArrayBuffer` transfer already exists; extend that contract to timed frame sequences and transferable `VideoFrame` output suitable for canvas presentation or `VideoEncoder`.
+
+WebCodecs input must be a bounded source adapter rather than an asynchronous callback from VapourSynth: decode or receive each browser `VideoFrame` before its synchronous upstream frame request, copy the supported pixel representation into VapourSynth-owned storage, and release both sides explicitly. Start with one conformance-backed format. Container demuxing/muxing, audio, and broader pixel-format conversion are separate work.
 
 ## 5. Cancellation and resource limits — done
 

@@ -67,4 +67,37 @@ test.describe("blueprint graph interactions", () => {
     await expect(outputState).toHaveText("awaiting render");
     await expect(outputState).toHaveAttribute("data-state", "changed");
   });
+
+  test("right-click menu deletes a node", async ({ page }) => {
+    await page.locator('[data-library-function="AddBorders"]').click();
+    await page.locator("[data-add-graph]").click();
+    const node = page.locator('[data-graph-node="AddBorders"]');
+    const box = await node.boundingBox();
+    await page.mouse.click(box.x + 40, box.y + 20, { button: "right" });
+    const menu = page.locator(".context-menu");
+    await expect(menu).toBeVisible();
+    await page.locator('.context-menu-item:has-text("Delete node")').click();
+    await expect(node).toHaveCount(0);
+    await expect(page.locator("textarea")).not.toHaveValue(/AddBorders/);
+  });
+
+  test("right-click menu copies a call", async ({ page }) => {
+    const node = page.locator('[data-graph-node="Invert"]');
+    const box = await node.boundingBox();
+    await page.mouse.click(box.x + 40, box.y + 20, { button: "right" });
+    await page.locator('.context-menu-item:has-text("Copy call")').click();
+    await expect(page.locator("[data-inspector-note]")).toContainText("Invert(clip, planes=None)");
+  });
+
+  test("output node right-click disables delete", async ({ page }) => {
+    const node = page.locator('[data-graph-node="Output"]');
+    const box = await node.boundingBox();
+    await page.mouse.click(box.x + 40, box.y + 20, { button: "right" });
+    await expect(page.locator(".context-menu")).toBeVisible();
+    await expect(page.locator('.context-menu-item:has-text("Delete node")')).toBeDisabled();
+    // Escape closes the menu and restores focus to the node.
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".context-menu")).toBeHidden();
+    await expect(node).toHaveAttribute("aria-pressed", "true");
+  });
 });

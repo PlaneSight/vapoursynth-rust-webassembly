@@ -157,6 +157,12 @@
       .crosshair { position: absolute; bottom: 1.25rem; left: 1.25rem; width: 1rem; height: 1rem; border: 1px solid var(--draft); border-radius: 50%; pointer-events: none; }
       .crosshair::before, .crosshair::after { content: ""; position: absolute; background: var(--draft); } .crosshair::before { top: .4rem; left: - .35rem; width: 1.65rem; height: 1px; } .crosshair::after { top: -.35rem; left: .4rem; width: 1px; height: 1.65rem; }
 
+      .context-menu { position: fixed; z-index: 30; min-width: 11rem; padding: .3rem; border: 1px solid var(--draft); background: var(--ink-900); box-shadow: 0 .8rem 1.8rem var(--shadow-ink), 0 0 0 1px var(--line-subtle); }
+      .context-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 1.2rem; width: 100%; min-height: 1.9rem; padding: 0 .55rem; border: 0; background: transparent; color: var(--paper); font-family: inherit; font-size: .64rem; letter-spacing: .04em; text-align: left; cursor: pointer; }
+      .context-menu-item:hover, .context-menu-item:focus { background: var(--draft-dim); color: var(--paper); outline: none; }
+      .context-menu-item:disabled { color: var(--paper-muted); cursor: not-allowed; opacity: .6; }
+      .context-menu-item kbd { color: var(--paper-muted); font-size: .56rem; letter-spacing: .08em; }
+
       .inspector-section { padding: .85rem .8rem; border-bottom: 1px solid var(--line); }
       .inspector-title { margin: 0 0 .5rem; color: var(--paper); font-size: .98rem; font-weight: 700; letter-spacing: -.03em; }
       .inspector-namespace { margin: 0; color: var(--draft); font-size: .62rem; }
@@ -258,7 +264,7 @@ clip.set_output()</textarea></label>
 
       <details class="diagnostics" aria-label="Runtime diagnostics"><summary>Runtime diagnostics</summary><div class="diagnostics-toolbar"><button class="diagnostics-clear" type="button">Clear log</button></div><pre class="diagnostics-log" aria-live="polite"></pre></details>
       <details class="diagnostics limitations" aria-label="Runtime limitations"><summary>Runtime boundaries</summary><div class="limitations-body"><p><strong>Authoring capabilities:</strong> <code data-authoring-caps>waiting for the runtime…</code></p><p>The library is a documented standard-core reference. Entries marked <strong>vector</strong> have browser render-vector coverage; every other entry must be authored with valid arguments and is verified by the upstream core only when it runs.</p><ul><li>One active graph at a time; program preview is RGBA8.</li><li>Graph plans permit 64 operations, 64 arguments each, and 16 outputs.</li><li>Native plugins and browser media decoding are not provided.</li></ul></div></details>
-      <footer class="footer"><span>Browser core linked</span><span>Blueprint view · drag nodes · Del removes · Ctrl / ⌘ + Enter runs</span></footer>
+      <footer class="footer"><span>Browser core linked</span><span>Blueprint view · drag nodes · right-click actions · Del removes · Ctrl / ⌘ + Enter runs</span></footer>
     </main>
     <script type="module" src="./demo.mjs"></script>
   </body>

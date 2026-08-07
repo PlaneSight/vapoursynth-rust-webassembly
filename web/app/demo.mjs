@@ -79,6 +79,9 @@ let rendered = false;
 let renderedSource = "";
 const nodePositions = new Map();
 const dimensions = { width: 320, height: 180 };
+let contextMenu = null;
+let contextMenuTarget = null;
+let contextMenuActions = [];
 
 window.addEventListener("error", (event) => diagnostics.error("window", event.message || "Unhandled browser error", { filename: event.filename, lineno: event.lineno }));
 window.addEventListener("unhandledrejection", (event) => diagnostics.error("promise", event.reason?.message ?? String(event.reason ?? "Unhandled promise rejection")));
@@ -358,7 +361,7 @@ widthControl.addEventListener("input", () => { dimensions.width = clampDimension
 heightControl.addEventListener("input", () => { dimensions.height = clampDimension(heightControl, dimensions.height); if (updateBlankClipDimensions()) touchSource("DIMENSIONS CHANGED"); selectFunction("BlankClip", { fromLibrary: true }); });
 librarySearch.addEventListener("input", renderLibrary);
 document.querySelectorAll(".library-tab").forEach((tab) => tab.addEventListener("click", () => { libraryKind = tab.textContent.toLowerCase(); document.querySelectorAll(".library-tab").forEach((candidate) => candidate.setAttribute("aria-selected", String(candidate === tab))); renderLibrary(); }));
-document.querySelector("[data-copy-call]").addEventListener("click", async () => { const text = functionInfo(selectedLibraryFunction).signature; try { await navigator.clipboard.writeText(text); inspectorNote.textContent = "Function call copied to the clipboard."; } catch { inspectorNote.textContent = `Copy this call: ${text}`; } });
+document.querySelector("[data-copy-call]").addEventListener("click", () => copySignature(functionInfo(selectedLibraryFunction).signature));
 document.querySelector("[data-add-graph]").addEventListener("click", () => {
   const name = selectedLibraryFunction;
   if (!addNodeToGraph(name)) return;
@@ -404,6 +407,84 @@ graphNodesTarget.addEventListener("keydown", (event) => {
     nudgeNode(index, dx, dy);
   }
 });
+graphNodesTarget.addEventListener("contextmenu", (event) => {
+  const node = event.target.closest("[data-graph-node]");
+  if (!node) return;
+  event.preventDefault();
+  const index = Number(node.dataset.index);
+  selectFunction(node.dataset.graphNode, { index });
+  const anchor = event.clientX === 0 && event.clientY === 0 ? (() => { const rect = node.getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; })() : { x: event.clientX, y: event.clientY };
+  openContextMenu(node, anchor.x, anchor.y);
+});
+
+async function copySignature(signature) {
+  try { await navigator.clipboard.writeText(signature); inspectorNote.textContent = "Function call copied to the clipboard."; }
+  catch { inspectorNote.textContent = `Copy this call: ${signature}`; }
+}
+
+function ensureContextMenu() {
+  if (contextMenu) return contextMenu;
+  contextMenu = document.createElement("div");
+  contextMenu.className = "context-menu";
+  contextMenu.setAttribute("role", "menu");
+  contextMenu.setAttribute("aria-label", "Node actions");
+  contextMenu.hidden = true;
+  contextMenu.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-item]");
+    if (!item || item.disabled) return;
+    const action = contextMenuActions[Number(item.dataset.item)];
+    closeContextMenu();
+    action?.();
+  });
+  contextMenu.addEventListener("keydown", (event) => {
+    const items = [...contextMenu.querySelectorAll("[data-item]:not(:disabled)")];
+    const current = items.indexOf(document.activeElement);
+    if (event.key === "Escape") { event.preventDefault(); closeContextMenu(); }
+    else if (event.key === "ArrowDown") { event.preventDefault(); items[(current + 1) % items.length]?.focus(); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); items[(current - 1 + items.length) % items.length]?.focus(); }
+    else if (event.key === "Home") { event.preventDefault(); items[0]?.focus(); }
+    else if (event.key === "End") { event.preventDefault(); items[items.length - 1]?.focus(); }
+  });
+  document.body.append(contextMenu);
+  return contextMenu;
+}
+
+function openContextMenu(node, x, y) {
+  const menu = ensureContextMenu();
+  closeContextMenu({ restoreFocus: false });
+  const kind = node.dataset.kind;
+  const info = functionInfo(node.dataset.graphNode);
+  contextMenuTarget = node;
+  const items = [];
+  if (kind === "output") items.push({ label: "Delete node", hint: "Del", disabled: true, title: "The program output is not deletable" });
+  else items.push({ label: "Delete node", hint: "Del", action: () => removeNodeAt(Number(node.dataset.index)) });
+  items.push({ label: "Copy call", action: () => copySignature(info.signature) });
+  contextMenuActions = items.map((item) => item.action);
+  menu.innerHTML = items.map((item, itemIndex) => `<button type="button" class="context-menu-item" role="menuitem" data-item="${itemIndex}" ${item.disabled ? "disabled" : ""} ${item.title ? `title="${item.title}"` : ""}><span>${item.label}</span>${item.hint ? `<kbd>${item.hint}</kbd>` : ""}</button>`).join("");
+  menu.hidden = false;
+  const rect = menu.getBoundingClientRect();
+  const margin = 8;
+  menu.style.left = `${clamp(x, margin, window.innerWidth - rect.width - margin)}px`;
+  menu.style.top = `${clamp(y, margin, window.innerHeight - rect.height - margin)}px`;
+  menu.querySelector("[data-item]:not(:disabled)")?.focus({ preventScroll: true });
+}
+
+function closeContextMenu({ restoreFocus = true } = {}) {
+  if (!contextMenu || contextMenu.hidden) { contextMenuTarget = null; return; }
+  const target = contextMenuTarget;
+  contextMenu.hidden = true;
+  contextMenu.innerHTML = "";
+  contextMenuActions = [];
+  contextMenuTarget = null;
+  if (restoreFocus && target) target.focus({ preventScroll: true });
+}
+
+document.addEventListener("pointerdown", (event) => {
+  if (contextMenu && !contextMenu.hidden && !contextMenu.contains(event.target)) closeContextMenu();
+});
+window.addEventListener("blur", () => closeContextMenu());
+window.addEventListener("resize", () => closeContextMenu({ restoreFocus: false }));
+window.addEventListener("scroll", () => closeContextMenu({ restoreFocus: false }), true);
 
 renderLibrary(); selectFunction("BlankClip", { fromLibrary: true });
 window.addEventListener("pagehide", () => client.close(), { once: true });

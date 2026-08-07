@@ -3,8 +3,8 @@ import { PyodideWorkerClient } from "../runtime/pyodide/client.mjs";
 
 const CORE_LIBRARY = Object.freeze([
   { group: "Clip creation", kind: "video", names: ["BlankClip", "AddBorders", "AssumeFPS", "Loop", "Reverse", "Trim"] },
-  { group: "Geometry & sequence", kind: "video", names: ["Crop", "CropAbs", "FlipHorizontal", "FlipVertical", "Resize", "Transpose", "Turn180", "StackHorizontal", "StackVertical", "Splice", "Interleave", "SelectEvery", "SeparateFields", "DoubleWeave", "DeleteFrames", "DuplicateFrames", "FreezeFrames"] },
-  { group: "Expression & colour", kind: "video", names: ["Expr", "Invert", "InvertMask", "Levels", "Limiter", "Lut", "Lut2", "MakeDiff", "MakeFullDiff", "MergeDiff", "MergeFullDiff", "Premultiply", "ShufflePlanes", "SplitPlanes"] },
+  { group: "Geometry & sequence", kind: "video", names: ["Crop", "CropAbs", "FlipHorizontal", "FlipVertical", "Bilinear", "Bicubic", "Point", "Lanczos", "Spline16", "Spline36", "Spline64", "Bob", "Transpose", "Turn90", "Turn180", "Turn270", "StackHorizontal", "StackVertical", "Splice", "Interleave", "SelectEvery", "SeparateFields", "DoubleWeave", "DeleteFrames", "DuplicateFrames", "FreezeFrames"] },
+  { group: "Expression & colour", kind: "video", names: ["Expr", "Invert", "InvertMask", "Levels", "Limiter", "Lut", "Lut2", "MakeDiff", "MakeFullDiff", "MergeDiff", "MergeFullDiff", "PreMultiply", "ShufflePlanes", "SplitPlanes"] },
   { group: "Compositing", kind: "video", names: ["Merge", "MaskedMerge", "CopyFrameProps", "ClipToProp", "PropToClip"] },
   { group: "Analysis & morphology", kind: "video", names: ["AverageFrames", "Binarize", "BinarizeMask", "BoxBlur", "Convolution", "Deflate", "Inflate", "Maximum", "Median", "Minimum", "PEMVerifier", "PlaneStats", "Prewitt", "Sobel"] },
   { group: "Frame properties", kind: "video", names: ["FrameEval", "ModifyFrame", "RemoveFrameProps", "SetFieldBased", "SetFrameProp", "SetFrameProps", "SetVideoCache"] },
@@ -23,6 +23,111 @@ const PYTHON_KEYWORDS = new Set([
   "lambda", "match", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with",
   "yield",
 ]);
+
+const RESIZE_ARGUMENTS = "vnode clip[, int width, int height, int format, enum matrix, enum transfer, enum primaries, enum range, enum chromaloc, enum matrix_in, enum transfer_in, enum primaries_in, enum range_in, enum chromaloc_in, float filter_param_a, float filter_param_b, string resample_filter_uv, float filter_param_a_uv, float filter_param_b_uv, string dither_type=\"none\", string cpu_type, float src_left, float src_top, float src_width, float src_height, float nominal_luminance, bint approximate_gamma=True, bint chromatic_adaptation=True]";
+const FILTER_SIGNATURES = Object.freeze({
+  BlankClip: "BlankClip([vnode clip, int width=640, int height=480, int format=vs.RGB24, int length=(10*fpsnum)/fpsden, int fpsnum=24, int fpsden=1, float[] color=<black>, bint keep=0, bint varsize=0, bint varformat=0])",
+  AddBorders: "AddBorders(vnode clip[, int left=0, int right=0, int top=0, int bottom=0, float[] color=<black>])",
+  AssumeFPS: "AssumeFPS(vnode clip[, vnode src, int fpsnum, int fpsden=1])",
+  Loop: "Loop(vnode clip[, int times=0])",
+  Reverse: "Reverse(vnode clip)",
+  Trim: "Trim(vnode clip[, int first=0, int last, int length])",
+  Crop: "Crop(vnode clip[, int left=0, int right=0, int top=0, int bottom=0])",
+  CropAbs: "CropAbs(vnode clip, int width, int height[, int left=0, int top=0])",
+  FlipHorizontal: "FlipHorizontal(vnode clip)",
+  FlipVertical: "FlipVertical(vnode clip)",
+  Bilinear: `Bilinear(${RESIZE_ARGUMENTS})`,
+  Bicubic: "Bicubic(vnode clip[, ...])",
+  Point: "Point(vnode clip[, ...])",
+  Lanczos: "Lanczos(vnode clip[, ...])",
+  Spline16: "Spline16(vnode clip[, ...])",
+  Spline36: "Spline36(vnode clip[, ...])",
+  Spline64: "Spline64(vnode clip[, ...])",
+  Bob: "Bob(vnode clip[, string filter=\"bicubic\", bint tff, ...])",
+  Transpose: "Transpose(vnode clip)",
+  Turn90: "Turn90(vnode clip)",
+  Turn180: "Turn180(vnode clip)",
+  Turn270: "Turn270(vnode clip)",
+  StackHorizontal: "StackHorizontal(vnode[] clips)",
+  StackVertical: "StackVertical(vnode[] clips)",
+  Splice: "Splice(vnode[] clips[, bint mismatch=0])",
+  Interleave: "Interleave(vnode[] clips[, bint extend=0, bint mismatch=0, bint modify_duration=True])",
+  SelectEvery: "SelectEvery(vnode clip, int cycle, int[] offsets[, bint modify_duration=True])",
+  SeparateFields: "SeparateFields(vnode clip[, bint tff, bint modify_duration=True])",
+  DoubleWeave: "DoubleWeave(vnode clip[, bint tff])",
+  DeleteFrames: "DeleteFrames(vnode clip, int[] frames)",
+  DuplicateFrames: "DuplicateFrames(vnode clip, int[] frames)",
+  FreezeFrames: "FreezeFrames(vnode clip, int[] first, int[] last, int[] replacement)",
+  Expr: "Expr(vnode[] clips, string[] expr[, int format])",
+  Invert: "Invert(vnode clip[, int[] planes=[0,1,2]])",
+  InvertMask: "InvertMask(vnode clip[, int[] planes=[0,1,2]])",
+  Levels: "Levels(vnode clip[, float[] min_in, float[] max_in, float[] gamma=1.0, float[] min_out, float[] max_out, int[] planes=[0,1,2]])",
+  Limiter: "Limiter(vnode clip[, float[] min, float[] max, int[] planes=[0,1,2]])",
+  Lut: "Lut(vnode clip[, int[] planes, int[] lut, float[] lutf, func function, int bits, bint floatout])",
+  Lut2: "Lut2(vnode clipa, vnode clipb[, int[] planes, int[] lut, float[] lutf, func function, int bits, bint floatout])",
+  MakeDiff: "MakeDiff(vnode clipa, vnode clipb[, int[] planes])",
+  MakeFullDiff: "MakeFullDiff(vnode clipa, vnode clipb)",
+  MergeDiff: "MergeDiff(vnode clipa, vnode clipb[, int[] planes])",
+  MergeFullDiff: "MergeFullDiff(vnode clipa, vnode clipb)",
+  PreMultiply: "PreMultiply(vnode clip, vnode alpha)",
+  ShufflePlanes: "ShufflePlanes(vnode[] clips, int[] planes, int colorfamily[, vnode prop_src=clips[0]])",
+  SplitPlanes: "SplitPlanes(vnode clip)",
+  Merge: "Merge(vnode clipa, vnode clipb[, float[] weight=0.5])",
+  MaskedMerge: "MaskedMerge(vnode clipa, vnode clipb, vnode mask[, int[] planes, bint first_plane=0, bint premultiplied=0])",
+  CopyFrameProps: "CopyFrameProps(vnode clip, vnode prop_src[, string[] props])",
+  ClipToProp: "ClipToProp(vnode clip, vnode mclip[, string prop='_Alpha'])",
+  PropToClip: "PropToClip(vnode clip[, string prop='_Alpha', int index=0])",
+  AverageFrames: "AverageFrames(vnode[] clips, float[] weights[, float scale, bint scenechange, int[] planes])",
+  Binarize: "Binarize(vnode clip[, float[] threshold, float[] v0, float[] v1, int[] planes=[0,1,2]])",
+  BinarizeMask: "BinarizeMask(vnode clip[, float[] threshold, float[] v0, float[] v1, int[] planes=[0,1,2]])",
+  BoxBlur: "BoxBlur(vnode clip[, int[] planes, int hradius=1, int hpasses=1, int vradius=1, int vpasses=1])",
+  Convolution: "Convolution(vnode clip, float[] matrix[, float bias=0.0, float divisor=0.0, int[] planes=[0,1,2], bint saturate=True, string mode=\"s\"])",
+  Deflate: "Deflate(vnode clip[, int[] planes=[0,1,2], float threshold])",
+  Inflate: "Inflate(vnode clip[, int[] planes=[0,1,2], float threshold])",
+  Maximum: "Maximum(vnode clip[, int[] planes, float threshold, bint[] coordinates=[1,1,1,1,1,1,1,1]])",
+  Median: "Median(vnode clip[, int[] planes=[0,1,2]])",
+  Minimum: "Minimum(vnode clip[, int[] planes, float threshold, bint[] coordinates=[1,1,1,1,1,1,1,1]])",
+  PEMVerifier: "PEMVerifier(vnode clip[, float[] upper, float[] lower])",
+  PlaneStats: "PlaneStats(vnode clipa[, vnode clipb, int plane=0, string prop='PlaneStats'])",
+  Prewitt: "Prewitt(vnode clip[, int[] planes=[0,1,2], float scale=1])",
+  Sobel: "Sobel(vnode clip[, int[] planes=[0,1,2], float scale=1])",
+  FrameEval: "FrameEval(vnode clip, func eval[, vnode[] prop_src, vnode[] clip_src])",
+  ModifyFrame: "ModifyFrame(vnode clip, clip[] clips, func selector)",
+  RemoveFrameProps: "RemoveFrameProps(vnode clip[, string props[]])",
+  SetFieldBased: "SetFieldBased(vnode clip, int value)",
+  SetFrameProp: "SetFrameProp(vnode clip, string prop[, int[] intval, float[] floatval, string[] data])",
+  SetFrameProps: "SetFrameProps(vnode clip, ...)",
+  SetVideoCache: "SetVideoCache(vnode clip[, int mode, int fixedsize, int maxsize, int maxhistory])",
+  ClipInfo: "ClipInfo(vnode clip[, int alignment=7, int scale=1])",
+  CoreInfo: "CoreInfo([vnode clip=std.BlankClip(), int alignment=7, int scale=1])",
+  FrameNum: "FrameNum(vnode clip[, int alignment=7, int scale=1])",
+  FrameProps: "FrameProps(vnode clip[, string[] props, int alignment=7, int scale=1])",
+  Text: "Text(vnode clip, string text[, int alignment=7, int scale=1])",
+  LoadAllPlugins: "LoadAllPlugins(string path)",
+  LoadPlugin: "LoadPlugin(string path, bint altsearchpath=False)",
+  LoadPluginAvisynth: "LoadPlugin(string path)",
+  SetMaxCPU: "SetMaxCPU(string cpu)",
+  AssumeSampleRate: "AssumeSampleRate(anode clip[, anode src, int samplerate])",
+  AudioGain: "AudioGain(anode clip, float[] gain, bint overflow_error=False)",
+  AudioLoop: "AudioLoop(anode clip[, int times=0])",
+  AudioMix: "AudioMix(anode[] clips, float[] matrix, int[] channels_out, bint overflow_error=False)",
+  AudioResample: "AudioResample(anode clip[, int samplerate, int sampletype, int bits, int[] channels, string dither_type=\"triangular\", bint normalize, bint overflow_error=False])",
+  AudioReverse: "AudioReverse(anode clip)",
+  AudioSplice: "AudioSplice(anode[] clips)",
+  AudioTrim: "AudioTrim(anode clip[, int first=0, int last, int length])",
+  BlankAudio: "BlankAudio([anode clip, int[] channels=[FRONT_LEFT,FRONT_RIGHT], int bits=16, int sampletype=INTEGER, int samplerate=44100, int length=(10*samplerate), bint keep=0, string waveform=\"none\", float amplitude=1.0, float frequency=440.0])",
+  SetAudioCache: "SetAudioCache(anode clip[, int mode, int fixedsize, int maxsize, int maxhistory])",
+  ShuffleChannels: "ShuffleChannels(anode[] clips, int[] channels_in, int[] channels_out)",
+  SplitChannels: "SplitChannels(anode clip)",
+});
+
+const FILTER_NAMESPACES = Object.freeze({
+  Bilinear: "resize", Bicubic: "resize", Point: "resize", Lanczos: "resize", Spline16: "resize", Spline36: "resize", Spline64: "resize", Bob: "resize",
+  ClipInfo: "text", CoreInfo: "text", FrameNum: "text", FrameProps: "text", Text: "text",
+  LoadPluginAvisynth: "avs",
+});
+
+const FILTER_TITLES = Object.freeze({ LoadPluginAvisynth: "LoadPlugin" });
 
 // Metadata drives the inspector and the source serializer. The browser
 // authoring API accepts scalar values and homogeneous numeric arrays, so
@@ -87,8 +192,6 @@ const FILTER_ARGUMENT_DEFINITIONS = Object.freeze({
 });
 
 const NODE_INFO = {
-  BlankClip: { namespace: "std", title: "BlankClip", summary: "Creates a constant video clip. This browser graph exposes width and height directly.", signature: "BlankClip(width, height, format, color, …)", kind: "source" },
-  Invert: { namespace: "std", title: "Invert", summary: "Inverts every sample in the supplied clip while preserving the clip's geometry.", signature: "Invert(clip, planes=None)", kind: "filter" },
   Output: { namespace: "graph", title: "Program output", summary: "Registers a video node as output 0, which the browser worker renders into the program preview.", signature: "clip.set_output(index=0)", kind: "output" },
 };
 
@@ -252,7 +355,8 @@ function buildFilterCall(name) {
     ? []
     : [definition.inputExpression ?? "clip"];
   const argumentsText = [...positional, ...named].join(", ");
-  return `clip = vs.core.std.${name}(${argumentsText})`;
+  const info = functionInfo(name);
+  return `clip = vs.core.${info.namespace}.${info.title}(${argumentsText})`;
 }
 
 function createArgumentControl(label, control, className = "") {
@@ -328,7 +432,13 @@ function renderArgumentControls() {
 function functionInfo(name) {
   if (NODE_INFO[name]) return NODE_INFO[name];
   const category = CORE_LIBRARY.find((entry) => entry.names.includes(name));
-  return { namespace: "std", title: name, summary: "Documented standard-core function. Add its required arguments in the Python source record, then run to validate it against the upstream core.", signature: `vs.core.std.${name}(…)`, kind: category?.kind ?? "video" };
+  const namespace = FILTER_NAMESPACES[name] ?? "std";
+  const title = FILTER_TITLES[name] ?? name;
+  const signature = FILTER_SIGNATURES[name] ?? `${title}(…)`;
+  const summary = namespace === "std"
+    ? "Documented VapourSynth standard-core function. Reference entries remain subject to the browser runtime boundary."
+    : `Documented VapourSynth ${namespace} function. Reference entries remain subject to the browser runtime boundary.`;
+  return { namespace, title, summary, signature, kind: category?.kind ?? "video" };
 }
 
 function renderLibrary() {
@@ -338,7 +448,12 @@ function renderLibrary() {
   const count = groups.reduce((total, entry) => total + entry.names.length, 0);
   libraryCount.textContent = `${count} refs`;
   if (!groups.length) { libraryGroups.innerHTML = '<p class="library-empty">No matching standard-core functions.</p>'; return; }
-  libraryGroups.innerHTML = groups.map((entry, index) => `<details class="function-group" ${index < 2 || query ? "open" : ""}><summary>${entry.group}<span>${entry.names.length}</span></summary><div class="function-list">${entry.names.map((name) => { const validated = VECTOR_VALIDATED_FUNCTIONS.has(name); return `<button class="function-entry" type="button" draggable="true" data-library-function="${name}" aria-current="${selectedLibraryFunction === name}" aria-label="${name}, ${validated ? "browser render vector" : "documented reference"}. Drag onto the graph to add it.">${name}<span class="function-state ${validated ? "verified" : ""}">${validated ? "vector" : "ref"}</span></button>`; }).join("")}</div></details>`).join("");
+  libraryGroups.innerHTML = groups.map((entry, index) => `<details class="function-group" ${index < 2 || query ? "open" : ""}><summary>${entry.group}<span>${entry.names.length}</span></summary><div class="function-list">${entry.names.map((name) => {
+    const info = functionInfo(name);
+    const validated = VECTOR_VALIDATED_FUNCTIONS.has(name);
+    const label = info.title === name ? name : `${info.namespace}.${info.title}`;
+    return `<button class="function-entry" type="button" draggable="true" data-library-function="${name}" aria-current="${selectedLibraryFunction === name}" aria-label="${label}, ${validated ? "browser render vector" : "documented reference"}. Drag onto the graph to add it.">${label}<span class="function-state ${validated ? "verified" : ""}">${validated ? "vector" : "ref"}</span></button>`;
+  }).join("")}</div></details>`).join("");
   libraryGroups.querySelectorAll("[data-library-function]").forEach((button) => button.addEventListener("click", () => selectFunction(button.dataset.libraryFunction, { fromLibrary: true })));
 }
 
@@ -629,7 +744,7 @@ function addNodeToGraph(name) {
     return { added: false, error: error.message };
   }
   if (call) insertSourceLine(call, null);
-  else insertSourceLine(null, `# Reference: vs.core.${info.namespace}.${name}(…)`);
+  else insertSourceLine(null, `# Reference: vs.core.${info.namespace}.${info.title}(…)`);
   return { added: true, executable: Boolean(call), call };
 }
 
@@ -655,6 +770,18 @@ function renderMinimap(parsed) {
   const route = count > 1 ? `<path d="M ${points.join(" L ")}"/>` : "";
   svg.innerHTML = `<rect x="2" y="2" width="116" height="66"/>${rects.join("")}${route}`;
 }
+function renderInspectorSpecs(rows) {
+  const fragment = document.createDocumentFragment();
+  for (const [label, value] of rows) {
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    fragment.append(term, description);
+  }
+  inspectorSpecs.replaceChildren(fragment);
+}
+
 
 function selectFunction(name, { fromLibrary = false, index } = {}) {
   const info = functionInfo(name);
@@ -671,7 +798,13 @@ function selectFunction(name, { fromLibrary = false, index } = {}) {
   inspectorTitle.textContent = info.title;
   inspectorPath.textContent = info.namespace === "graph" ? info.signature : `vs.core.${info.namespace}.${info.title}`;
   const validated = VECTOR_VALIDATED_FUNCTIONS.has(name);
-  inspectorSpecs.innerHTML = `<dt>Call</dt><dd>${info.signature}</dd><dt>Role</dt><dd>${info.kind}</dd><dt>Arguments</dt><dd>${argumentCount} configured</dd><dt>Validation</dt><dd>${validated ? "browser render vector" : "upstream on run"}</dd><dt>Graph</dt><dd>${fromLibrary ? "library selection" : "plotted operation"}</dd>`;
+  renderInspectorSpecs([
+    ["Call", info.signature],
+    ["Role", info.kind],
+    ["Arguments", `${argumentCount} configured`],
+    ["Validation", validated ? "browser render vector" : "upstream on run"],
+    ["Graph", fromLibrary ? "library selection" : "plotted operation"],
+  ]);
   inspectorNote.textContent = validated
     ? info.summary
     : `${info.summary} Configure arguments below before adding it to the graph.`;

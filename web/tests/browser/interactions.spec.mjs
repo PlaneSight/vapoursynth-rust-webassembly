@@ -28,7 +28,23 @@ test.describe("blueprint graph interactions", () => {
     await row.locator("[data-argument-value]").fill("browser draft");
     await page.locator("[data-add-graph]").click();
     await expect(page.locator('[data-graph-node="Text"]')).not.toHaveClass(/is-draft/);
-    await expect(page.locator("textarea")).toHaveValue(/std\.Text\(clip, text="browser draft"\)/);
+    await expect(page.locator("textarea")).toHaveValue(/vs\.core\.text\.Text\(clip, text="browser draft"\)/);
+  });
+
+  test("renders canonical module and default signatures", async ({ page }) => {
+    await page.locator("[data-library-search]").fill("Text");
+    await page.locator('[data-library-function="Text"]').click();
+    await expect(page.locator("[data-inspector-path]")).toHaveText("vs.core.text.Text");
+    await expect(page.locator("[data-inspector-specs]")).toContainText("Text(vnode clip, string text[, int alignment=7, int scale=1])");
+
+    await page.locator("[data-library-search]").fill("Bilinear");
+    await page.locator('[data-library-function="Bilinear"]').click();
+    await expect(page.locator("[data-inspector-path]")).toHaveText("vs.core.resize.Bilinear");
+    await expect(page.locator("[data-inspector-specs]")).toContainText("Bilinear(vnode clip[, int width, int height, int format");
+
+    await page.locator("[data-library-search]").fill("PreMultiply");
+    await page.locator('[data-library-function="PreMultiply"]').click();
+    await expect(page.locator("[data-inspector-specs]")).toContainText("PreMultiply(vnode clip, vnode alpha)");
   });
 
   test("runs a preset numeric filter through the worker", async ({ page }) => {
@@ -208,7 +224,7 @@ test.describe("blueprint graph interactions", () => {
     const box = await node.boundingBox();
     await page.mouse.click(box.x + 40, box.y + 20, { button: "right" });
     await page.locator('.context-menu-item:has-text("Copy call")').click();
-    await expect(page.locator("[data-inspector-note]")).toContainText("Invert(clip, planes=None)");
+    await expect(page.locator("[data-inspector-note]")).toContainText("Invert(vnode clip[, int[] planes=[0,1,2]])");
   });
 
   test("output node right-click disables delete", async ({ page }) => {

@@ -100,4 +100,86 @@ test.describe("blueprint graph interactions", () => {
     await expect(page.locator(".context-menu")).toBeHidden();
     await expect(node).toHaveAttribute("aria-pressed", "true");
   });
+
+  test("out-port drag rewires the script chain", async ({ page }) => {
+    // Chain: BlankClip, Invert, AddBorders, FlipHorizontal, Output.
+    await page.locator('[data-library-function="AddBorders"]').click();
+    await page.locator("[data-add-graph]").click();
+    await page.locator('[data-library-function="FlipHorizontal"]').click();
+    await page.locator("[data-add-graph]").click();
+    // Drag FlipHorizontal's output onto Invert: Flip must now feed Invert.
+    const flip = page.locator('[data-graph-node="FlipHorizontal"]');
+    const portBox = await flip.locator(".node-port.out").boundingBox();
+    const invertBox = await page.locator('[data-graph-node="Invert"]').boundingBox();
+    await page.mouse.move(portBox.x + portBox.width / 2, portBox.y + portBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(invertBox.x + 60, invertBox.y + 40, { steps: 8 });
+    await expect(page.locator(".wire-rubber")).toBeVisible();
+    await expect(page.locator('[data-graph-node="Invert"].is-connect-target')).toHaveCount(1);
+    await page.mouse.up();
+    await expect(page.locator("textarea")).toHaveValue(/FlipHorizontal\(clip\)[\s\S]*Invert\(clip\)[\s\S]*AddBorders\(clip, left=7/);
+    await expect(page.locator('[data-graph-node="FlipHorizontal"][data-index="1"]')).toHaveCount(1);
+    // A rewire is a source edit: a rendered preview goes stale.
+    await page.locator(".run-button").click();
+    await expect(page.locator("[data-output-state]")).toHaveAttribute("data-state", "ready", { timeout: 90_000 });
+    // The run-button click can scroll the page; bring the port back into view.
+    await page.locator('[data-graph-node="Invert"] .node-port.out').scrollIntoViewIfNeeded();
+    const portBoxAfter = await page.locator('[data-graph-node="Invert"] .node-port.out').boundingBox();
+    const flipBox = await page.locator('[data-graph-node="FlipHorizontal"]').boundingBox();
+    await page.mouse.move(portBoxAfter.x + portBoxAfter.width / 2, portBoxAfter.y + portBoxAfter.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(flipBox.x + 60, flipBox.y + 40, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.locator("[data-output-state]")).toHaveAttribute("data-state", "changed");
+  });
+
+  test("in-port drag onto a node makes that node feed it", async ({ page }) => {
+    // Chain: BlankClip, Invert, AddBorders, Output. Drag the Output in-port
+    // onto Invert: Invert becomes the final stage before Output.
+    await page.locator('[data-library-function="AddBorders"]').click();
+    await page.locator("[data-add-graph]").click();
+    const output = page.locator('[data-graph-node="Output"]');
+    const portBox = await output.locator(".node-port.in").boundingBox();
+    const invertBox = await page.locator('[data-graph-node="Invert"]').boundingBox();
+    await page.mouse.move(portBox.x + portBox.width / 2, portBox.y + portBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(invertBox.x + 60, invertBox.y + 40, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.locator('[data-graph-node="Invert"][data-index="2"]')).toHaveCount(1);
+    await expect(page.locator("textarea")).toHaveValue(/AddBorders\(clip, left=7, right=3, top=5, bottom=9[\s\S]*Invert\(clip\)[\s\S]*set_output/);
+  });
+
+  test("out-port drop on empty canvas moves the node to the end", async ({ page }) => {
+    // Chain: BlankClip, Invert, AddBorders, Output. Drop Invert's output on
+    // empty canvas: Invert appends after AddBorders, just before Output.
+    await page.locator('[data-library-function="AddBorders"]').click();
+    await page.locator("[data-add-graph]").click();
+    const invert = page.locator('[data-graph-node="Invert"]');
+    const portBox = await invert.locator(".node-port.out").boundingBox();
+    const panel = page.locator("[data-graph-nodes]");
+    const panelBox = await panel.boundingBox();
+    await page.mouse.move(portBox.x + portBox.width / 2, portBox.y + portBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(panelBox.x + panelBox.width - 90, panelBox.y + panelBox.height - 70, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.locator('[data-graph-node="Invert"][data-index="2"]')).toHaveCount(1);
+    await expect(page.locator("textarea")).toHaveValue(/AddBorders\(clip, left=7, right=3, top=5, bottom=9[\s\S]*Invert\(clip\)[\s\S]*set_output/);
+  });
+
+  test("wiring adjacent nodes is a no-op", async ({ page }) => {
+    // Chain: BlankClip, Invert, AddBorders, Output. Invert already feeds
+    // AddBorders, so that wire drag must not touch the source.
+    await page.locator('[data-library-function="AddBorders"]').click();
+    await page.locator("[data-add-graph]").click();
+    const before = await page.locator("textarea").inputValue();
+    const invert = page.locator('[data-graph-node="Invert"]');
+    const portBox = await invert.locator(".node-port.out").boundingBox();
+    const targetBox = await page.locator('[data-graph-node="AddBorders"]').boundingBox();
+    await page.mouse.move(portBox.x + portBox.width / 2, portBox.y + portBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox.x + 60, targetBox.y + 40, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.locator("textarea")).toHaveValue(before);
+    await expect(page.locator("[data-output-state]")).not.toHaveAttribute("data-state", "changed");
+  });
 });

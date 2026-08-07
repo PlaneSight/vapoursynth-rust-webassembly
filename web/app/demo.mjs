@@ -82,6 +82,8 @@ const dimensions = { width: 320, height: 180 };
 let contextMenu = null;
 let contextMenuTarget = null;
 let contextMenuActions = [];
+let wireDrag = null;
+let suppressNextNodeClick = false;
 
 window.addEventListener("error", (event) => diagnostics.error("window", event.message || "Unhandled browser error", { filename: event.filename, lineno: event.lineno }));
 window.addEventListener("unhandledrejection", (event) => diagnostics.error("promise", event.reason?.message ?? String(event.reason ?? "Unhandled promise rejection")));
@@ -133,7 +135,11 @@ function renderGraph() {
   const wirePaths = parsed.slice(1).map((node, index) => {
     const start = positions[index]; const end = positions[index + 1];
     const wireClass = [node.kind === "output" ? "is-output" : "", node.kind === "draft" ? "is-draft" : ""].filter(Boolean).join(" ");
-    return `<path class="${wireClass}" data-from="${index}" d="M ${start.left + 16} ${start.top + 9} C ${start.left + 22} ${start.top + 9}, ${end.left - 6} ${end.top + 9}, ${end.left} ${end.top + 9}"/>`;
+    const d = `M ${start.left + 16} ${start.top + 9} C ${start.left + 22} ${start.top + 9}, ${end.left - 6} ${end.top + 9}, ${end.left} ${end.top + 9}`;
+    const marker = node.kind === "output" ? "wire-arrow-output" : "wire-arrow";
+    const flowClass = node.kind === "output" ? "is-output" : node.kind === "draft" ? "is-draft" : "";
+    const flowDur = node.kind === "draft" ? 2.4 : 1.5;
+    return `<path class="${wireClass}" data-from="${index}" d="${d}" marker-end="url(#${marker})"/><circle class="wire-flow ${flowClass}" r="1.5"><animateMotion dur="${flowDur}s" repeatCount="indefinite" path="${d}"/></circle>`;
   }).join("");
   const nodes = parsed.map((node, index) => {
     const info = functionInfo(node.name); const active = selectedIndex === index;
@@ -142,12 +148,12 @@ function renderGraph() {
       ? `<div class="node-row"><span>input</span><strong>clip</strong></div><div class="node-row"><span>state</span><strong>reference</strong></div>`
       : node.name === "BlankClip" ? `<div class="node-row"><span>width</span><strong>${dimensions.width}</strong></div><div class="node-row"><span>height</span><strong>${dimensions.height}</strong></div><div class="node-row"><span>format</span><strong>RGB24</strong></div>` : node.name === "Output" ? `<div class="node-row"><span>index</span><strong>0</strong></div><div class="node-row"><span>preview</span><strong>RGBA8</strong></div>` : `<div class="node-row"><span>input</span><strong>clip</strong></div><div class="node-row"><span>result</span><strong>node</strong></div>`;
     const content = node.name === "Output" ? `<div class="graph-node-header"><span class="node-mark"></span>${info.title}<span class="node-namespace">output 0</span></div><canvas width="320" height="180" aria-label="Rendered VapourSynth frame"></canvas><div class="node-body"><span>worker preview</span><span data-output-state>awaiting render</span></div>` : `<div class="graph-node-header"><span class="node-mark"></span>${info.title}<span class="node-namespace">${node.namespace}</span></div><div class="node-body">${body}</div>`;
-    return `<button class="graph-node ${node.name === "Output" ? "program-node" : ""}${draftClass}" type="button" data-graph-node="${node.name}" data-index="${index}" data-kind="${node.kind}" aria-pressed="${active}" aria-label="${info.title}${node.kind === "draft" ? ", reference draft" : ""}. Drag to move, Delete to remove." style="left:${positions[index].left}%;top:${positions[index].top}%">${index > 0 ? '<span class="node-port in" aria-hidden="true"></span>' : ""}${content}${index < parsed.length - 1 ? '<span class="node-port out" aria-hidden="true"></span>' : ""}</button>`;
+    return `<button class="graph-node ${node.name === "Output" ? "program-node" : ""}${draftClass}" type="button" data-graph-node="${node.name}" data-index="${index}" data-kind="${node.kind}" aria-pressed="${active}" aria-label="${info.title}${node.kind === "draft" ? ", reference draft" : ""}. Drag to move, drag a port to rewire, Delete to remove." style="left:${positions[index].left}%;top:${positions[index].top}%">${index > 0 ? '<span class="node-port in" aria-hidden="true" title="Wire a source here"></span>' : ""}${content}${index < parsed.length - 1 ? '<span class="node-port out" aria-hidden="true" title="Drag to rewire"></span>' : ""}</button>`;
   }).join("");
-  graphNodesTarget.innerHTML = `<svg class="graph-wires" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${wirePaths}</svg>${nodes}`;
+  graphNodesTarget.innerHTML = `<svg class="graph-wires" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="wire-arrow" viewBox="0 0 1 1" refX="0.62" refY="0.5" markerWidth="0.9" markerHeight="0.9" markerUnits="userSpaceOnUse" orient="auto"><path d="M 0 0 L 1 0.5 L 0 1 z" fill="var(--draft)"/></marker><marker id="wire-arrow-output" viewBox="0 0 1 1" refX="0.62" refY="0.5" markerWidth="0.9" markerHeight="0.9" markerUnits="userSpaceOnUse" orient="auto"><path d="M 0 0 L 1 0.5 L 0 1 z" fill="var(--signal)"/></marker></defs>${wirePaths}</svg>${nodes}`;
   graphNodesTarget.querySelectorAll("[data-graph-node]").forEach((node) => {
     const index = Number(node.dataset.index);
-    node.addEventListener("click", () => selectFunction(node.dataset.graphNode, { index }));
+    node.addEventListener("click", () => { if (suppressNextNodeClick) { suppressNextNodeClick = false; return; } selectFunction(node.dataset.graphNode, { index }); });
     attachNodeDrag(node, index);
   });
   renderMinimap(parsed);
@@ -159,7 +165,7 @@ function renderGraph() {
 
 function attachNodeDrag(nodeEl, index) {
   nodeEl.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || event.target.closest(".node-port")) return;
     event.preventDefault();
     const panel = graphNodesTarget;
     const panelRect = panel.getBoundingClientRect();
@@ -232,18 +238,69 @@ function removeNodeAt(index) {
     const position = nodePositions.get(shifted);
     if (position) { nodePositions.set(shifted - 1, position); nodePositions.delete(shifted); }
   }
-  touchSource("NODE REMOVED");
   const nextSelection = parsed[Math.max(0, index - 1)];
   selectFunction(nextSelection?.name ?? "BlankClip", { fromLibrary: nextSelection === undefined });
+  touchSource("NODE REMOVED");
+}
+
+// Rewires the chain so the op at sourceIndex directly feeds the op at
+// targetIndex: the source call block moves to the line just before the
+// target's block in the source record. This is the script-logic edit the
+// visual ports express: Invert→AddBorders and AddBorders→Invert produce
+// different frames, so the source text itself must change.
+function moveCallBefore(sourceIndex, targetIndex) {
+  const parsed = parseScript();
+  const sourceOp = parsed[sourceIndex];
+  const targetOp = parsed[targetIndex];
+  if (!sourceOp || !targetOp || sourceOp.kind === "output" || targetOp.kind === "empty") return;
+  if (sourceIndex === targetIndex) return;
+  const lines = source.value.split("\n");
+  const start = sourceOp.line;
+  const end = blockEndLine(sourceOp, lines);
+  const nothingBetween = parsed.every((op) => op === sourceOp || op === targetOp || op.line <= start || op.line >= targetOp.line);
+  if (sourceIndex < targetIndex && nothingBetween) return; // already directly feeds the target
+  const block = lines.splice(start, end - start);
+  let targetLine = targetOp.line;
+  if (targetOp.line > start) targetLine -= end - start;
+  lines.splice(targetLine, 0, ...block);
+  source.value = lines.join("\n");
+  shiftPositionsAfterMove(sourceIndex, targetIndex);
+  const reparse = parseScript();
+  const movedIndex = reparse.findIndex((op) => op.line === targetLine && op.kind === sourceOp.kind && op.name === sourceOp.name);
+  selectFunction(sourceOp.name, { index: movedIndex !== -1 ? movedIndex : targetIndex });
+  touchSource("NODE REWIRED");
+}
+
+function blockEndLine(op, lines) {
+  const pattern = new RegExp(`^\\s*${escapeRegExp(op.id)}\\s*=\\s*vs\\.core\\.`);
+  if (!pattern.test(lines[op.line] ?? "")) return op.line + 1;
+  let depth = 0; let end = op.line;
+  do { for (const character of lines[end] ?? "") { if (character === "(") depth += 1; else if (character === ")") depth -= 1; } end += 1; } while (depth > 0 && end < lines.length);
+  return end;
+}
+
+function shiftPositionsAfterMove(sourceIndex, targetIndex) {
+  const next = new Map();
+  for (const [key, value] of nodePositions) {
+    if (sourceIndex < targetIndex) {
+      if (key === sourceIndex) next.set(targetIndex - 1, value);
+      else if (key > sourceIndex && key < targetIndex) next.set(key - 1, value);
+      else next.set(key, value);
+    } else {
+      if (key === sourceIndex) next.set(targetIndex, value);
+      else if (key >= targetIndex && key < sourceIndex) next.set(key + 1, value);
+      else next.set(key, value);
+    }
+  }
+  nodePositions.clear();
+  for (const [key, value] of next) nodePositions.set(key, value);
 }
 
 function removeCallFromSource(op) {
   const lines = source.value.split("\n");
   const pattern = new RegExp(`^\\s*${escapeRegExp(op.id)}\\s*=\\s*vs\\.core\\.`);
   if (!pattern.test(lines[op.line] ?? "")) return;
-  let depth = 0; let end = op.line;
-  do { for (const character of lines[end] ?? "") { if (character === "(") depth += 1; else if (character === ")") depth -= 1; } end += 1; } while (depth > 0 && end < lines.length);
-  lines.splice(op.line, end - op.line);
+  lines.splice(op.line, blockEndLine(op, lines) - op.line);
   source.value = lines.join("\n");
 }
 
@@ -485,6 +542,110 @@ document.addEventListener("pointerdown", (event) => {
 window.addEventListener("blur", () => closeContextMenu());
 window.addEventListener("resize", () => closeContextMenu({ restoreFocus: false }));
 window.addEventListener("scroll", () => closeContextMenu({ restoreFocus: false }), true);
+
+// Wire ports: drag an out-port onto another node (or the empty canvas to
+// append) to rewire the script chain; an in-port dragged onto a node makes
+// that node feed it. Ports mirror the linear clip pipeline, so a wire A→B
+// means A's call block moves to the line directly before B's.
+graphNodesTarget.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const port = event.target.closest(".node-port");
+  if (!port) return;
+  event.preventDefault();
+  const node = port.closest("[data-graph-node]");
+  const index = Number(node.dataset.index);
+  const kind = port.classList.contains("in") ? "in" : "out";
+  startWireDrag(port, index, kind);
+  const onMove = (moveEvent) => updateRubberWire(moveEvent.clientX, moveEvent.clientY);
+  const onUp = (upEvent) => { document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp); document.removeEventListener("keydown", onKey); endWireDrag(upEvent); };
+  const onKey = (keyEvent) => { if (keyEvent.key === "Escape") { document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp); document.removeEventListener("keydown", onKey); cancelWireDrag(); } };
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onUp);
+  document.addEventListener("keydown", onKey);
+});
+
+function startWireDrag(portEl, index, kind) {
+  const wiresSvg = graphNodesTarget.querySelector(".graph-wires");
+  const start = wirePortCenter(portEl);
+  const rubber = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  rubber.setAttribute("class", "wire-rubber");
+  rubber.setAttribute("d", rubberPath(start, start));
+  wiresSvg.append(rubber);
+  wireDrag = { index, kind, start, rubber };
+  graphNodesTarget.classList.add("is-connecting");
+}
+
+function wirePortCenter(portEl) {
+  const panelRect = graphNodesTarget.getBoundingClientRect();
+  const portRect = portEl.getBoundingClientRect();
+  return { x: ((portRect.left + portRect.width / 2 - panelRect.left) / panelRect.width) * 100, y: ((portRect.top + portRect.height / 2 - panelRect.top) / panelRect.height) * 100 };
+}
+
+function rubberPath(from, to) {
+  return `M ${from.x} ${from.y} C ${from.x + 4} ${from.y}, ${to.x - 4} ${to.y}, ${to.x} ${to.y}`;
+}
+
+function updateRubberWire(clientX, clientY) {
+  if (!wireDrag) return;
+  const panelRect = graphNodesTarget.getBoundingClientRect();
+  const to = { x: ((clientX - panelRect.left) / panelRect.width) * 100, y: ((clientY - panelRect.top) / panelRect.height) * 100 };
+  wireDrag.rubber.setAttribute("d", rubberPath(wireDrag.start, to));
+  const target = document.elementFromPoint(clientX, clientY)?.closest("[data-graph-node]");
+  graphNodesTarget.querySelectorAll(".graph-node.is-connect-target").forEach((node) => node.classList.remove("is-connect-target"));
+  if (target) target.classList.add("is-connect-target");
+}
+
+function endWireDrag(event) {
+  if (!wireDrag) return;
+  const { index, kind } = wireDrag;
+  cancelWireDrag();
+  suppressNextNodeClick = true;
+  const parsed = parseScript();
+  const targetEl = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-graph-node]");
+  const targetIndex = targetEl ? Number(targetEl.dataset.index) : -1;
+  const outputIndex = parsed.findIndex((op) => op.kind === "output");
+  if (targetIndex === index) return;
+  if (kind === "out") {
+    // The dragged node's output feeds the drop target; dropping on the
+    // canvas appends it as the final stage.
+    const sourceOp = parsed[index];
+    if (!sourceOp || sourceOp.kind === "output") return;
+    if (targetIndex === 0) moveCallBefore(index, 1);
+    else if (targetIndex > 0) moveCallBefore(index, targetIndex);
+    else if (outputIndex !== -1) moveCallBefore(index, outputIndex);
+  } else if (targetIndex > 0) {
+    // The drop target feeds the dragged node's input. The Output node
+    // has no output to give, so it cannot feed anything.
+    const feeder = parsed[targetIndex];
+    if (feeder && feeder.kind !== "output") moveCallBefore(targetIndex, index);
+  } else if (targetIndex === 0) {
+    // Wire to the BlankClip slot: the dragged node becomes the first stage.
+    moveCallBefore(index, 1);
+  }
+}
+
+function cancelWireDrag() {
+  if (!wireDrag) return;
+  wireDrag.rubber.remove();
+  wireDrag = null;
+  graphNodesTarget.classList.remove("is-connecting");
+  graphNodesTarget.querySelectorAll(".graph-node.is-connect-target").forEach((node) => node.classList.remove("is-connect-target"));
+}
+
+graphNodesTarget.addEventListener("mouseover", (event) => {
+  const port = event.target.closest(".node-port");
+  if (!port) return;
+  const node = port.closest("[data-graph-node]");
+  const from = port.classList.contains("out") ? Number(node.dataset.index) : Number(node.dataset.index) - 1;
+  graphNodesTarget.querySelectorAll(`.graph-wires path[data-from="${from}"]`).forEach((path) => path.classList.add("is-hovered"));
+});
+graphNodesTarget.addEventListener("mouseout", (event) => {
+  const port = event.target.closest(".node-port");
+  if (!port) return;
+  const node = port.closest("[data-graph-node]");
+  const from = port.classList.contains("out") ? Number(node.dataset.index) : Number(node.dataset.index) - 1;
+  graphNodesTarget.querySelectorAll(`.graph-wires path[data-from="${from}"]`).forEach((path) => path.classList.remove("is-hovered"));
+});
 
 renderLibrary(); selectFunction("BlankClip", { fromLibrary: true });
 window.addEventListener("pagehide", () => client.close(), { once: true });

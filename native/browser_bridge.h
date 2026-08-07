@@ -75,6 +75,10 @@ typedef struct vs_browser_argument {
 /// Returns the version of the scalar opaque-handle ABI.
 VS_BROWSER_EXPORT uint32_t vs_browser_handle_abi_version(void) VS_BROWSER_NOEXCEPT;
 
+/// Returns the compile-time browser scheduler mode: 0 for single-threaded,
+/// 1 for the opt-in pthread build.
+VS_BROWSER_EXPORT uint32_t vs_browser_threading_mode(void) VS_BROWSER_NOEXCEPT;
+
 /// Creates the only active browser core and returns its opaque token.
 ///
 /// Both output fields are set to zero before work begins and are non-zero only

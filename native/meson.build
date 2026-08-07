@@ -71,8 +71,13 @@ if host_machine.system() != 'emscripten'
     error('The browser render-invert proof must be configured with toolchains/emscripten.ini')
 endif
 
+browser_threaded = get_option('browser_threaded')
+browser_thread_pool_size = get_option('browser_thread_pool_size')
+browser_thread_pool_size_arg = browser_thread_pool_size.to_string()
+browser_threaded_arg = '0'
+browser_thread_link_args = []
+
 browser_cpp_args = [
-    '-DVS_BROWSER_SINGLE_THREAD=1',
     '-DVS_BROWSER_STATIC_PLUGINS=1',
     '-DVS_CORE_EXPORTS',
     '-DVS_GRAPH_API',
@@ -80,6 +85,26 @@ browser_cpp_args = [
     '-fexceptions',
     '-fno-char8_t',
 ]
+
+if browser_threaded
+    # Emscripten needs pthreads on both compilation and final linking.
+    browser_cpp_args += [
+        '-pthread',
+        '-DVS_BROWSER_THREADED=1',
+        '-DVS_BROWSER_THREAD_POOL_SIZE=' + browser_thread_pool_size_arg,
+    ]
+    # Rust's no_std ownership archive uses the stable prebuilt compiler_builtins,
+    # which cannot advertise Wasm atomics. The archive never spawns threads;
+    # keep the C++/VapourSynth objects pthread-enabled and defer this ABI check.
+    browser_thread_link_args += [
+        '-pthread',
+        '-sPTHREAD_POOL_SIZE=' + browser_thread_pool_size_arg,
+        '-Wl,--no-check-features',
+    ]
+    browser_threaded_arg = '1'
+else
+    browser_cpp_args += ['-DVS_BROWSER_SINGLE_THREAD=1']
+endif
 
 upstream_includes = include_directories(
     '../vendor/vapoursynth/include',
@@ -131,7 +156,7 @@ render_invert = executable(
     include_directories: upstream_includes,
     link_with: [browser_bridge, upstream_core],
     override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
-    link_args: [
+    link_args: browser_thread_link_args + [
         '-fexceptions',
         '-sALLOW_MEMORY_GROWTH=0',
         '-sASSERTIONS=2',
@@ -141,7 +166,9 @@ render_invert = executable(
     ],
 )
 
-test('upstream opaque-handle render-invert', render_invert)
+if not browser_threaded
+    test('upstream opaque-handle render-invert', render_invert)
+endif
 
 render_plan = executable(
     'vapoursynth-render-plan',
@@ -150,7 +177,7 @@ render_plan = executable(
     include_directories: upstream_includes,
     link_with: [browser_bridge, upstream_core],
     override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
-    link_args: [
+    link_args: browser_thread_link_args + [
         '-fexceptions',
         '-sALLOW_MEMORY_GROWTH=0',
         '-sASSERTIONS=2',
@@ -185,21 +212,27 @@ corpus_vectors = [
     'invert-without-clip',
 ]
 
-foreach vector : corpus_vectors
-    test(
-        'opaque-handle plan corpus ' + vector,
-        render_plan,
-        args: ['/corpus/' + vector + '.plan.json'],
-    )
-endforeach
+if not browser_threaded
+    foreach vector : corpus_vectors
+        test(
+            'opaque-handle plan corpus ' + vector,
+            render_plan,
+            args: ['/corpus/' + vector + '.plan.json'],
+        )
+    endforeach
+endif
 
 rust_core_builder = find_program(
     join_paths(meson.project_source_root(), 'tools', 'build-emscripten-core.sh'),
 )
+rust_cargo_target_dir = join_paths(
+    meson.current_build_dir(),
+    browser_threaded ? 'cargo-threaded' : 'cargo-single',
+)
 rust_core = custom_target(
     'vapoursynth-emscripten-core',
     output: 'libvapoursynth-emscripten-core.a',
-    command: [rust_core_builder, '@OUTPUT@', '@OUTDIR@/cargo'],
+    command: [rust_core_builder, '@OUTPUT@', rust_cargo_target_dir, browser_threaded_arg],
     build_always_stale: true,
     build_by_default: true,
 )
@@ -211,7 +244,7 @@ render_invert_rust = executable(
     include_directories: upstream_includes,
     link_with: [rust_core, browser_bridge, upstream_core],
     override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
-    link_args: [
+    link_args: browser_thread_link_args + [
         '-fexceptions',
         '-sWASM_BIGINT',
         '-sABORTING_MALLOC=0',
@@ -223,9 +256,11 @@ render_invert_rust = executable(
     ],
 )
 
-test('Rust render-invert through VapourSynth RGBA', render_invert_rust)
+if not browser_threaded
+    test('Rust render-invert through VapourSynth RGBA', render_invert_rust)
+endif
 
-browser_module_link_args = [
+browser_module_link_args = browser_thread_link_args + [
     '--no-entry',
     '-fexceptions',
     '-sWASM_BIGINT',
@@ -235,7 +270,7 @@ browser_module_link_args = [
     '-sEXPORT_ES6=1',
     '-sMODULARIZE=1',
     '-sINITIAL_MEMORY=67108864',
-    '-sEXPORTED_FUNCTIONS=["_malloc","_free","_vs_rust_core_create","_vs_rust_core_release","_vs_rust_core_invoke","_vs_rust_node_get_frame","_vs_rust_node_video_info","_vs_rust_source_create","_vs_rust_source_upload_rgba","_vs_rust_node_release","_vs_rust_frame_dimensions","_vs_rust_frame_rgba8_size","_vs_rust_frame_copy_rgba8","_vs_rust_frame_timing","_vs_rust_frame_release"]',
+    '-sEXPORTED_FUNCTIONS=["_malloc","_free","_vs_browser_threading_mode","_vs_rust_core_create","_vs_rust_core_release","_vs_rust_core_invoke","_vs_rust_node_get_frame","_vs_rust_node_video_info","_vs_rust_source_create","_vs_rust_source_upload_rgba","_vs_rust_node_release","_vs_rust_frame_dimensions","_vs_rust_frame_rgba8_size","_vs_rust_frame_copy_rgba8","_vs_rust_frame_timing","_vs_rust_frame_release"]',
 ]
 
 browser_module = executable(
@@ -256,13 +291,15 @@ node_browser_module = executable(
     link_args: browser_module_link_args + ['-sENVIRONMENT=node'],
 )
 
-node = find_program('node')
-test(
-    'worker-owned Emscripten ES module plan corpus',
-    node,
-    args: [
-        files('tests/browser_module.test.mjs'),
-        node_browser_module,
-        files('tests/vectors/invert-color.plan.json'),
-    ],
-)
+if not browser_threaded
+    node = find_program('node')
+    test(
+        'worker-owned Emscripten ES module plan corpus',
+        node,
+        args: [
+            files('tests/browser_module.test.mjs'),
+            node_browser_module,
+            files('tests/vectors/invert-color.plan.json'),
+        ],
+    )
+endif

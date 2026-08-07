@@ -259,6 +259,74 @@ test("WebCodecsInputAdapter copies and closes a VideoFrame with timing", async (
   adapter.close();
 });
 
+test("WebCodecsInputAdapter defers node release until an awaited upload finishes", async () => {
+  const calls = [];
+  const nodeToken = { slot: 4, generation: 5 };
+  const runtime = {
+    source_create(...args) {
+      calls.push(["create", ...args.slice(1)]);
+      return nodeToken;
+    },
+    source_upload_rgba(...args) {
+      calls.push(["upload", ...args.slice(1)]);
+    },
+    node_release(...args) {
+      calls.push(["release", ...args.slice(1)]);
+    },
+  };
+  let startCopy;
+  const copyStarted = new Promise((resolve) => {
+    startCopy = resolve;
+  });
+  let finishCopy;
+  const copyGate = new Promise((resolve) => {
+    finishCopy = resolve;
+  });
+  const frame = {
+    codedWidth: 1,
+    codedHeight: 1,
+    async copyTo(output, options) {
+      assert.deepEqual(options, { format: "RGBA" });
+      startCopy();
+      await copyGate;
+      output.set([1, 2, 3, 255]);
+    },
+    close() {
+      this.closed = true;
+    },
+  };
+  const adapter = new WebCodecsInputAdapter(runtime, { slot: 1, generation: 2 }, {
+    requestId: 8,
+    width: 1,
+    height: 1,
+    numFrames: 1,
+  });
+
+  const upload = adapter.uploadFrame(frame);
+  await copyStarted;
+  adapter.close();
+  adapter.close();
+
+  assert.equal(adapter.nodeToken, null);
+  assert.equal(frame.closed, undefined);
+  assert.deepEqual(calls.map(([name]) => name), ["create"]);
+  await assert.rejects(
+    adapter.uploadFrame(new Uint8Array(4)),
+    (error) => error.code === "runtime-closed",
+  );
+
+  finishCopy();
+  await upload;
+  adapter.close();
+  adapter.free();
+
+  assert.equal(frame.closed, true);
+  assert.deepEqual(calls.map(([name]) => name), ["create", "upload", "release"]);
+  assert.deepEqual(calls[1][1], nodeToken);
+  assert.deepEqual(calls[1][3], new Uint8Array([1, 2, 3, 255]));
+  assert.deepEqual(calls[2], ["release", nodeToken]);
+});
+
 test("WebCodecsInputAdapter rejects cropped VideoFrames", async () => {
   const runtime = {
     source_create() {

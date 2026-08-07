@@ -8,7 +8,8 @@
     "test:integration": "node --test web/tests/integration/*.test.mjs",
     "test:browser": "playwright test",
     "test:browser:build": "./tools/build-browser.sh && playwright test",
-    "serve": "uv run --locked python -m http.server 4173 --directory build/web"
+    "serve": "uv run --locked python tools/serve-browser.py --port 4173 --directory build/web",
+    "serve:isolated": "uv run --locked python tools/serve-browser.py --port 4173 --directory build/web --cross-origin-isolation"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

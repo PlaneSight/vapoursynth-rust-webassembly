@@ -134,6 +134,23 @@ test("renders the requested frame number through the retained output node", () =
   ]);
 });
 
+test("does not expose absent frame timing values", () => {
+  const runtime = fakeRuntime({
+    frame_timing() {
+      return { durationNum: 0, durationDen: 0, absoluteTime: 0, flags: 0 };
+    },
+  });
+  const session = new AuthoringSession(runtime);
+  session.execute_graph(1, DEFAULT_PLAN);
+
+  assert.deepEqual(session.render_output(2, 0, 0), {
+    width: 320,
+    height: 180,
+    rgba: new Uint8Array(320 * 180 * 4).fill(223),
+    flags: 0,
+  });
+});
+
 test("releases every lease on reset and rejects stale rendering afterwards", () => {
   const runtime = fakeRuntime();
   const session = new AuthoringSession(runtime);

@@ -3,6 +3,134 @@ const ERROR_BUFFER_SIZE = 512;
 const MAX_RGBA_BYTES = 16 * 1024 * 1024;
 const U32_MAX = 0xffff_ffff;
 
+const THREADING_SINGLE = "single-thread";
+const THREADING_THREADED = "threaded";
+const THREADING_UNAVAILABLE = "unavailable";
+
+export const THREADING_MODES = Object.freeze({
+  SINGLE: THREADING_SINGLE,
+  THREADED: THREADING_THREADED,
+  UNAVAILABLE: THREADING_UNAVAILABLE,
+});
+
+/**
+ * Resolves the build and browser prerequisites that determine the effective
+ * scheduler. A threaded artifact is never downgraded to the single-thread
+ * artifact after startup; it is reported unavailable instead.
+ */
+export function resolveThreadingStatus(module, options = {}) {
+  if (!module || typeof module !== "object") {
+    throw new TypeError("Emscripten module is required");
+  }
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    throw new TypeError("threading options must be an object");
+  }
+
+  const compiledOverride = options.compiledMode === undefined
+    ? undefined
+    : normalizeThreadingMode(options.compiledMode, "compiledMode");
+  const discovered = moduleThreadingMode(module, {
+    required: compiledOverride === undefined,
+  });
+  const compiled = normalizeThreadingMode(
+    discovered ?? compiledOverride ?? THREADING_SINGLE,
+    "compiledMode",
+  );
+  const requested = normalizeThreadingMode(
+    options.requestedMode
+      ?? options.mode
+      ?? compiledOverride
+      ?? compiled,
+    "requestedMode",
+  );
+  const crossOriginIsolated = readBooleanOption(
+    options.crossOriginIsolated,
+    globalThis.crossOriginIsolated === true,
+    "crossOriginIsolated",
+  );
+  const sharedArrayBuffer = readBooleanOption(
+    options.sharedArrayBufferAvailable,
+    typeof globalThis.SharedArrayBuffer === "function",
+    "sharedArrayBufferAvailable",
+  );
+
+  let active = compiled;
+  let available = true;
+  let reason = compiled === THREADING_THREADED ? "threaded-build" : "single-thread-build";
+  let fallback = compiled === THREADING_SINGLE;
+  if (
+    requested !== compiled
+    || (compiledOverride !== undefined && compiledOverride !== compiled)
+  ) {
+    active = THREADING_UNAVAILABLE;
+    available = false;
+    fallback = false;
+    reason = "threading-artifact-mismatch";
+  } else if (compiled === THREADING_THREADED && !crossOriginIsolated) {
+    active = THREADING_UNAVAILABLE;
+    available = false;
+    fallback = false;
+    reason = "cross-origin-isolation-required";
+  } else if (compiled === THREADING_THREADED && !sharedArrayBuffer) {
+    active = THREADING_UNAVAILABLE;
+    available = false;
+    fallback = false;
+    reason = "shared-array-buffer-unavailable";
+  }
+  return Object.freeze({
+    requested,
+    compiled,
+    active,
+    available,
+    fallback,
+    crossOriginIsolated,
+    sharedArrayBuffer,
+    reason,
+  });
+}
+
+
+function moduleThreadingMode(module, { required = true } = {}) {
+  if (typeof module._vs_browser_threading_mode === "function") {
+    const mode = module._vs_browser_threading_mode();
+    if (mode === 0) return THREADING_SINGLE;
+    if (mode === 1) return THREADING_THREADED;
+    return mode;
+  }
+
+  const explicit = module.vsBrowserThreading
+    ?? module.__vsBrowserThreading
+    ?? module.threadingMode;
+  if (explicit !== undefined) {
+    return explicit?.compiled ?? explicit;
+  }
+
+  if (!required) {
+    return undefined;
+  }
+  throw new TypeError("Emscripten module is missing required export _vs_browser_threading_mode()");
+}
+
+function normalizeThreadingMode(value, label) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : value;
+  if (normalized === "single" || normalized === THREADING_SINGLE) {
+    return THREADING_SINGLE;
+  }
+  if (normalized === THREADING_THREADED) {
+    return THREADING_THREADED;
+  }
+  throw new TypeError(`${label} must be "single-thread" or "threaded"`);
+}
+
+function readBooleanOption(value, fallback, label) {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (typeof value !== "boolean") {
+    throw new TypeError(`${label} must be a boolean`);
+  }
+  return value;
+}
 // Native vs_browser_argument descriptor layout (wasm32, 20 bytes, 4-aligned).
 const ARGUMENT_DESCRIPTOR_SIZE = 20;
 const ARGUMENT_KEY_OFFSET = 0;
@@ -19,6 +147,7 @@ const ARGUMENT_KIND_NODE = 4;
 const REQUIRED_EXPORTS = Object.freeze([
   "_malloc",
   "_free",
+  "_vs_browser_threading_mode",
   "_vs_rust_core_create",
   "_vs_rust_core_release",
   "_vs_rust_core_invoke",
@@ -58,9 +187,10 @@ const STATUS_CODES = Object.freeze({
  */
 export class EmscriptenSession {
   #module;
+  #threading;
   #closed = false;
 
-  constructor(module) {
+  constructor(module, options = {}) {
     if (!module || typeof module !== "object") {
       throw new TypeError("Emscripten module is required");
     }
@@ -70,6 +200,7 @@ export class EmscriptenSession {
       }
     }
     this.#module = module;
+    this.#threading = resolveThreadingStatus(module, options);
   }
 
   status() {
@@ -78,8 +209,10 @@ export class EmscriptenSession {
       upstreamLinked: !this.#closed,
       workerProtocol: true,
       phase: "browser-worker-canvas",
+      threading: this.#threading,
     });
   }
+
 
   core_create(requestId) {
     this.#assertOpen(requestId);
@@ -573,7 +706,9 @@ export class EmscriptenSession {
     while (length < ERROR_BUFFER_SIZE && view.getUint8(length) !== 0) {
       length += 1;
     }
-    return new TextDecoder().decode(this.#module.HEAPU8.subarray(errorBuffer, errorBuffer + length));
+    const bytes = new Uint8Array(length);
+    bytes.set(this.#module.HEAPU8.subarray(errorBuffer, errorBuffer + length));
+    return new TextDecoder().decode(bytes);
   }
 
   #statusError(requestId, status, fallbackMessage) {
@@ -607,12 +742,72 @@ export class EmscriptenSession {
     if (this.#closed) {
       throw workerError(requestId, "runtime-closed", "the Emscripten runtime is closed");
     }
+    if (!this.#threading.available) {
+      throw workerError(
+        requestId,
+        "threading-unavailable",
+        `the ${this.#threading.compiled} runtime is unavailable: ${this.#threading.reason}`,
+      );
+    }
   }
 
   #utf8(value) {
     return new TextEncoder().encode(value);
   }
 }
+/**
+ * Status-only runtime used when a threaded artifact cannot be instantiated
+ * because the browser lacks its isolation prerequisites.
+ */
+export class UnavailableEmscriptenSession {
+  #threading;
+  #closed = false;
+
+  constructor(threading) {
+    if (!threading || threading.available !== false || threading.active !== THREADING_UNAVAILABLE) {
+      throw new TypeError("an unavailable threading status is required");
+    }
+    this.#threading = threading;
+  }
+
+  status() {
+    return JSON.stringify({
+      schemaVersion: 1,
+      upstreamLinked: false,
+      workerProtocol: true,
+      phase: "browser-worker-canvas",
+      threading: this.#threading,
+    });
+  }
+
+  core_create(requestId) { this.#reject(requestId); }
+  core_release(requestId) { this.#reject(requestId); }
+  invoke(requestId) { this.#reject(requestId); }
+  node_get_frame(requestId) { this.#reject(requestId); }
+  node_video_info(requestId) { this.#reject(requestId); }
+  node_release(requestId) { this.#reject(requestId); }
+  frame_dimensions(requestId) { this.#reject(requestId); }
+  frame_timing(requestId) { this.#reject(requestId); }
+  frame_rgba8_size(requestId) { this.#reject(requestId); }
+  frame_copy_rgba8(requestId) { this.#reject(requestId); }
+  frame_release(requestId) { this.#reject(requestId); }
+
+  free() {
+    this.#closed = true;
+  }
+
+  #reject(requestId) {
+    if (this.#closed) {
+      throw workerError(requestId, "runtime-closed", "the Emscripten runtime is closed");
+    }
+    throw workerError(
+      requestId,
+      "threading-unavailable",
+      `the ${this.#threading.compiled} runtime is unavailable: ${this.#threading.reason}`,
+    );
+  }
+}
+
 
 function normalizeUploadBytes(value, requestId) {
   let bytes;

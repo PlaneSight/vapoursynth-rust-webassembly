@@ -534,11 +534,23 @@ function updateAddGraphControl() {
   addGraphButton.title = info.kind !== "video" ? "Only video functions can plot on the video route" : "";
 }
 
+function formatThreadingStatus(threading) {
+  if (!threading || typeof threading !== "object") return "scheduler status unavailable";
+  if (!threading.available || threading.active === "unavailable") {
+    return `${threading.compiled ?? "threaded"} unavailable · ${threading.reason ?? "browser prerequisites missing"}`;
+  }
+  const fallback = threading.fallback ? " · single-thread fallback" : "";
+  return `${threading.active ?? "single-thread"} active${fallback}`;
+}
+
 async function refreshStatus() {
   setStatus("Starting browser workers…", "loading");
-  const capabilities = await client.status(); runtimeReady = capabilities.upstreamLinked;
+  const capabilities = await client.status();
+  runtimeReady = capabilities.upstreamLinked && capabilities.threading?.available !== false;
   const capsTarget = document.querySelector("[data-authoring-caps]");
-  if (capsTarget) capsTarget.textContent = capabilities.authoring?.available ? `plan version ${capabilities.authoring.planVersion} · source format ${capabilities.authoring.format}` : "authoring unavailable";
+  if (capsTarget) capsTarget.textContent = runtimeReady && capabilities.authoring?.available ? `plan version ${capabilities.authoring.planVersion} · source format ${capabilities.authoring.format}` : "authoring unavailable";
+  const threadingTarget = document.querySelector("[data-threading-status]");
+  if (threadingTarget) threadingTarget.textContent = formatThreadingStatus(capabilities.threading);
   if (runtimeReady) setStatus("Runtime ready · author or run a graph", "ready"); else setStatus("Pyodide ready · Emscripten runtime not attached", "idle");
   updateRunControl();
 }

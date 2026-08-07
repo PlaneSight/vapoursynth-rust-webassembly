@@ -259,13 +259,19 @@ function readFrameTiming(runtime, requestId, frameToken, output, frameNumber) {
     "frame timing flags",
   );
   const result = { flags };
-  if (timing.durationNum !== undefined) {
+  const hasDuration = (flags & 1) !== 0;
+  const hasAbsoluteTime = (flags & 2) !== 0;
+  if (hasDuration) {
+    if (timing.durationNum === undefined || timing.durationDen === undefined) {
+      throw sessionError(requestId, "runtime-protocol", "frame timing duration flag requires a complete duration pair");
+    }
     result.durationNum = requireMetadataInteger(timing.durationNum, requestId, "frame duration numerator");
-  }
-  if (timing.durationDen !== undefined) {
     result.durationDen = requireMetadataInteger(timing.durationDen, requestId, "frame duration denominator");
   }
-  if (timing.absoluteTime !== undefined && timing.absoluteTime !== null) {
+  if (hasAbsoluteTime) {
+    if (timing.absoluteTime === undefined || timing.absoluteTime === null) {
+      throw sessionError(requestId, "runtime-protocol", "frame timing absolute-time flag requires a value");
+    }
     const absoluteTime = Number(timing.absoluteTime);
     if (!Number.isFinite(absoluteTime)) {
       throw sessionError(requestId, "runtime-protocol", "frame absolute time must be finite");
@@ -276,8 +282,6 @@ function readFrameTiming(runtime, requestId, frameToken, output, frameNumber) {
     result.fpsNum = output.fpsNum;
     result.fpsDen = output.fpsDen;
   }
-  const hasDuration = (flags & 1) !== 0;
-  const hasAbsoluteTime = (flags & 2) !== 0;
   let duration = hasDuration
     ? rationalMicroseconds(result.durationNum, result.durationDen)
     : undefined;

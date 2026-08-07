@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const ISOLATION_FLAG = process.env.BROWSER_CROSS_ORIGIN_ISOLATION === "1" ? " --cross-origin-isolation" : "";
 const PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
@@ -31,7 +32,7 @@ export default defineConfig({
     // Serve the same distribution under a subpath so tests exercise the
     // base-path resolution GitHub Pages uses for a project site
     // (/vapoursynth-rust-webassembly/), not just root hosting.
-    command: "python3 -m http.server 4173 --directory build",
+    command: `python3 tools/serve-browser.py --port 4173 --directory build${ISOLATION_FLAG}`,
     url: `${BASE_URL}/web/app/`,
     reuseExistingServer: false,
     timeout: 30_000,

@@ -44,7 +44,7 @@ Activate Emscripten 3.1.68 in the current shell, then run:
 npm run serve
 ```
 
-Open `http://localhost:4173/` — the root redirects to `/app/` (ES modules and nested module workers need an HTTP(S) origin, not `file://`). `npm run serve` runs `uv run --locked python -m http.server 4173 --directory build/web`. The build applies the locked upstream patch only while compiling, restores the submodule before exit, runs the Emscripten render-invert/plan/Rust/module tests, and stages the deployable site in `build/web/`.
+Open `http://localhost:4173/` — the root redirects to `/app/` (ES modules and nested module workers need an HTTP(S) origin, not `file://`). `npm run serve` runs `tools/serve-browser.py` without isolation headers and therefore exercises the default single-thread fallback. To build the opt-in scheduler, set `VS_BROWSER_THREADED=1` (and optionally `VS_BROWSER_THREAD_POOL_SIZE=4`) before running the same build script, then serve it with `npm run serve:isolated`. The isolated server emits `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`, and `Cross-Origin-Resource-Policy: same-origin`; without both isolation headers and `SharedArrayBuffer`, the threaded artifact reports an unavailable scheduler rather than pretending to be threaded. The build applies the locked upstream patch only while compiling, restores the submodule before exit, runs the Emscripten render-invert/plan/Rust/module tests, and stages the deployable site in `build/web/`.
 
 Generated files belong only in `build/`: `build/emscripten/` holds Meson/Emscripten output, `build/native-*` holds the host oracle outputs, `build/web/` holds the browser distribution, and `build/test/` is reserved for test output. Do not hand-edit generated files.
 
@@ -58,7 +58,7 @@ npm run test:browser        # requires an existing build/web
 npm run test:browser:build  # ./tools/build-browser.sh, then the tests
 ```
 
-`npm run test:browser` invokes `playwright test`; the Playwright config starts its own server (`python3 -m http.server 4173 --directory build`), runs headless Chromium, and writes the HTML report to `build/test/playwright-report/`. The suite mounts the distribution under `/web/app/` (not the origin root) so relative asset resolution matches the GitHub Pages project-site base path `/vapoursynth-rust-webassembly/` (see `.github/workflows/static.yml`).
+`npm run test:browser` invokes `playwright test`; the Playwright config starts `tools/serve-browser.py` on port 4173 without isolation headers, runs headless Chromium, and writes the HTML report to `build/test/playwright-report/`. Set `BROWSER_CROSS_ORIGIN_ISOLATION=1` when explicitly testing a threaded artifact; this is separate from the default CI path. The suite mounts the distribution under `/web/app/` (not the origin root) so relative asset resolution matches the GitHub Pages project-site base path `/vapoursynth-rust-webassembly/` (see `.github/workflows/static.yml`).
 
 ## Isolated Docker builds
 

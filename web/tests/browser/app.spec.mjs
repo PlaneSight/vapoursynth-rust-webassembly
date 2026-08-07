@@ -138,6 +138,8 @@ function assertManifest(manifest) {
 
 const MANIFEST = JSON.parse(readFileSync(join(fixtureDirectory, "conformance.json"), "utf8"));
 const CORPUS = assertManifest(MANIFEST);
+const THREADED_ARTIFACT = ["1", "true"].includes((process.env.VS_BROWSER_THREADED ?? "").toLowerCase());
+const CROSS_ORIGIN_ISOLATED = process.env.BROWSER_CROSS_ORIGIN_ISOLATION === "1";
 
 async function openRuntime(page) {
   const consoleErrors = [];
@@ -146,11 +148,38 @@ async function openRuntime(page) {
   await page.goto("/web/app/");
   const runtimeStatus = page.locator("[data-runtime-status]");
   await expect(runtimeStatus).toHaveAttribute("data-state", "ready", { timeout: 90_000 });
+  const expectedThreading = THREADED_ARTIFACT
+    ? (CROSS_ORIGIN_ISOLATED ? "threaded active" : "threaded unavailable · cross-origin-isolation-required")
+    : "single-thread active · single-thread fallback";
+  await expect(page.locator("[data-threading-status]")).toHaveText(expectedThreading);
   await expect(page.locator(".run-button")).toBeEnabled();
   return { consoleErrors, runtimeStatus };
 }
 
 test.describe("production browser VapourSynth native differential corpus", () => {
+  test("serves the scheduler isolation contract", async ({ request }) => {
+    const response = await request.get("/web/app/");
+    expect(response.ok()).toBe(true);
+    const headers = response.headers();
+    if (CROSS_ORIGIN_ISOLATED) {
+      expect(headers["cross-origin-opener-policy"]).toBe("same-origin");
+      expect(headers["cross-origin-embedder-policy"]).toBe("require-corp");
+      expect(headers["cross-origin-resource-policy"]).toBe("same-origin");
+    } else {
+      expect(headers["cross-origin-opener-policy"] ?? "").toBe("");
+      expect(headers["cross-origin-embedder-policy"] ?? "").toBe("");
+      expect(headers["cross-origin-resource-policy"] ?? "").toBe("");
+    }
+  });
+
+  test("reports unavailable threaded artifacts before module creation", async ({ page }) => {
+    test.skip(!THREADED_ARTIFACT || CROSS_ORIGIN_ISOLATED, "only applies to an unisolated threaded artifact");
+    await page.goto("/web/app/");
+    await expect(page.locator("[data-runtime-status]")).toHaveAttribute("data-state", "idle", { timeout: 90_000 });
+    await expect(page.locator("[data-threading-status]")).toHaveText("threaded unavailable · cross-origin-isolation-required");
+    await expect(page.locator(".run-button")).toBeDisabled();
+  });
+
   test("rejects stale native provenance", () => {
     const stale = structuredClone(MANIFEST);
     stale.upstream.commit = "0000000000000000000000000000000000000000";

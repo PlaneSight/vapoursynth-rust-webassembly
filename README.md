@@ -8,6 +8,7 @@ This project compiles the real upstream VapourSynth core to WebAssembly with Ems
 - The checked-in 17-case std corpus records native-oracle RGBA bytes and frame metadata plus two normalized upstream failures; the Emscripten/Node and Playwright paths must match those records for the selected cases.
 - Python authoring runs synchronously in a Pyodide worker and drains a graph plan that the VapourSynth worker executes generically.
 - Unsupported APIs fail with explicit errors rather than silently emulating desktop behaviour.
+- The default browser artifact remains single-threaded; an explicit `browser_threaded` build enables the upstream scheduler with a fixed Emscripten pthread pool and requires an isolated origin (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`, and `SharedArrayBuffer`).
 
 ## Demo
 
@@ -17,8 +18,7 @@ uv sync --locked
 ./tools/build-browser.sh
 npm run serve
 ```
-
-Open `http://localhost:4173/` — the root redirects to `/app/` (ES modules and nested module workers need an HTTP(S) origin, not `file://`). `npm run serve` serves the production distribution with `uv run --locked python -m http.server 4173 --directory build/web`. The browser build applies the locked browser-only upstream patch, compiles the Emscripten module, and runs its Emscripten/Node checks; host-native conformance is a separate check. Generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
+Open `http://localhost:4173/` — the root redirects to `/app/` (ES modules and nested module workers need an HTTP(S) origin, not `file://`). `npm run serve` serves the production distribution with `tools/serve-browser.py` in single-thread fallback mode. Use `npm run serve:isolated` only with a threaded build; it adds the COOP/COEP headers required for `crossOriginIsolated`. The browser build applies the locked browser-only upstream patch, compiles the Emscripten module, and runs its Emscripten/Node checks; host-native conformance is a separate check. Generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
 
 ## Browser tests
 
@@ -71,7 +71,8 @@ Rust handles only typed copies of thread-affine tokens; the C++ bridge owns the 
 | `vs.RGB24` | Other pixel formats |
 | 17 common `vs.core.std.*` filters (see `docs/support.md`) | Other namespaces and functions |
 | `VideoNode`, `vs.set_output()` | Plugin discovery and native plugins |
-| Graph plans (64 ops / 16 outputs) | Video decoding/encoding, threaded scheduling |
+| Graph plans (64 ops / 16 outputs) | Video decoding/encoding |
+| Single-thread fallback; optional isolated threaded build | Other pixel formats; threaded scheduling in the default artifact |
 
 `std.Resize` (zimg) and other formats are deliberately deferred. Python authoring is synchronous: each call records one typed operation in the plan, which the VapourSynth worker executes generically. Anything outside the supported subset raises an explicit unsupported error.
 

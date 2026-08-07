@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { WorkerClient } from "../../runtime/vapoursynth/client.mjs";
+import { startVapourSynthWorker } from "../../runtime/vapoursynth/bootstrap.mjs";
 import { installWorkerRuntime, startWorkerRuntime } from "../../runtime/vapoursynth/worker.mjs";
-
 const PLAN = {
   version: 1,
   operations: [
@@ -174,4 +174,36 @@ test("releases the worker-owned session during shutdown", () => {
   assert.equal(scope.onmessage, null);
   assert.equal(freed, true);
   assert.equal(closed, true);
+});
+
+test("reports unavailable threaded startup without creating the pthread module", async () => {
+  const posted = [];
+  let moduleLoaded = false;
+  const scope = {
+    postMessage(message) {
+      posted.push(message);
+    },
+  };
+
+  await startVapourSynthWorker({
+    scope,
+    compiledMode: "threaded",
+    crossOriginIsolated: false,
+    sharedArrayBufferAvailable: true,
+    loadModule: async () => {
+      moduleLoaded = true;
+      throw new Error("shared WebAssembly memory should not be created");
+    },
+  });
+
+  assert.equal(moduleLoaded, false);
+  assert.deepEqual(posted.shift(), { schemaVersion: 1, type: "ready" });
+  await scope.onmessage({
+    data: { schemaVersion: 1, requestId: 1, type: "status" },
+  });
+
+  const response = posted.shift();
+  assert.equal(response.ok, true);
+  assert.equal(response.payload.threading.active, "unavailable");
+  assert.equal(response.payload.threading.reason, "cross-origin-isolation-required");
 });

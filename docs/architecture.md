@@ -58,8 +58,9 @@ The upstream patch set makes these explicit:
 
 - only a statically registered subset of the standard plugin is present;
 - dynamic library loading and automatic plugin discovery are rejected;
-- the scheduler is synchronous and single-threaded in this build;
-- `getFrameAsync` is not browser-asynchronous behaviour in this build;
+- the default browser artifact uses the synchronous single-thread scheduler; an opt-in threaded artifact uses the upstream scheduler with an Emscripten pthread pool;
+- threaded artifacts are usable only from an isolated origin with `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`, and `SharedArrayBuffer`;
+- `getFrameAsync` is not browser-asynchronous behaviour in the default artifact;
 - `std.Resize` is intentionally omitted, so `zimg` is not part of this build.
 
 Frame transport hands RGBA8 `ArrayBuffer`s to the caller on the `postMessage` transfer list, so buffer ownership moves without a worker-to-caller clone. The bounded `renderOutputSequence` helper adds ordered, cancellable frame delivery and optional WebCodecs timing metadata; its `video-frame` transport requires explicit `VideoFrame.close()` ownership. `WebCodecsInputAdapter` accepts RGBA8 buffers or browser `VideoFrame`s and copies them into a C++-owned RGB24 source node. Container demuxing/muxing, audio, and broader pixel-format conversion remain outside this build.

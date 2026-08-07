@@ -4,3 +4,19 @@ option(
     value: '',
     description: 'Build directory containing the pinned native VapourSynth libraries',
 )
+
+option(
+    'browser_threaded',
+    type: 'boolean',
+    value: false,
+    description: 'Enable the opt-in Emscripten pthread browser build',
+)
+
+option(
+    'browser_thread_pool_size',
+    type: 'integer',
+    value: 4,
+    min: 2,
+    max: 32,
+    description: 'Number of Emscripten pthread workers to pre-create',
+)

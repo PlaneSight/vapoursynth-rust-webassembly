@@ -100,7 +100,9 @@ export class WebCodecsInputAdapter {
   #runtime;
   #requestId;
   #nodeToken;
+  #pendingNodeToken = null;
   #closed = false;
+  #activeUploads = 0;
   #width;
   #height;
   #numFrames;
@@ -172,20 +174,23 @@ export class WebCodecsInputAdapter {
 
   async uploadFrame(frame, frameNumber = this.#nextFrame, timing = {}) {
     this.#assertOpen();
-    if (frameNumber && typeof frameNumber === "object" && !Array.isArray(frameNumber)) {
-      timing = frameNumber;
-      frameNumber = timing.frameNumber ?? this.#nextFrame;
-    }
-    if (!timing || typeof timing !== "object" || Array.isArray(timing)) {
-      throw featureError("invalid-timing", "upload timing must be an object");
-    }
-    frameNumber = requireFrameNumber(frameNumber);
-    if (frameNumber >= this.#numFrames) {
-      throw featureError("invalid-frame", `frame number ${frameNumber} exceeds the source frame count`);
-    }
-
-    const shouldCloseInput = this.#closeInputFrames && isVideoFrameLike(frame);
+    const nodeToken = this.#nodeToken;
+    this.#activeUploads += 1;
+    let shouldCloseInput = false;
     try {
+      if (frameNumber && typeof frameNumber === "object" && !Array.isArray(frameNumber)) {
+        timing = frameNumber;
+        frameNumber = timing.frameNumber ?? this.#nextFrame;
+      }
+      if (!timing || typeof timing !== "object" || Array.isArray(timing)) {
+        throw featureError("invalid-timing", "upload timing must be an object");
+      }
+      frameNumber = requireFrameNumber(frameNumber);
+      if (frameNumber >= this.#numFrames) {
+        throw featureError("invalid-frame", `frame number ${frameNumber} exceeds the source frame count`);
+      }
+
+      shouldCloseInput = this.#closeInputFrames && isVideoFrameLike(frame);
       const rgba = await this.#copyRgba(frame);
       const durationNum = timing.durationNum ?? (this.#fpsNum > 0 ? this.#fpsDen : 0);
       const durationDen = timing.durationDen ?? (this.#fpsNum > 0 ? this.#fpsNum : 0);
@@ -200,7 +205,7 @@ export class WebCodecsInputAdapter {
       }
       const uploadArguments = [
         this.#requestId,
-        this.#nodeToken,
+        nodeToken,
         frameNumber,
         rgba,
         durationNum,
@@ -213,8 +218,15 @@ export class WebCodecsInputAdapter {
       this.#nextFrame = Math.max(this.#nextFrame, frameNumber + 1);
       return { frameNumber, width: this.#width, height: this.#height };
     } finally {
-      if (shouldCloseInput) {
-        closeVideoFrame(frame);
+      try {
+        if (shouldCloseInput) {
+          closeVideoFrame(frame);
+        }
+      } finally {
+        this.#activeUploads -= 1;
+        if (this.#closed && this.#activeUploads === 0) {
+          this.#releasePendingNode();
+        }
       }
     }
   }
@@ -226,8 +238,9 @@ export class WebCodecsInputAdapter {
     this.#closed = true;
     const token = this.#nodeToken;
     this.#nodeToken = null;
-    if (token) {
-      this.#runtime.node_release(this.#requestId, token);
+    this.#pendingNodeToken = token;
+    if (this.#activeUploads === 0) {
+      this.#releasePendingNode();
     }
   }
 
@@ -284,6 +297,13 @@ export class WebCodecsInputAdapter {
     return output;
   }
 
+  #releasePendingNode() {
+    const token = this.#pendingNodeToken;
+    this.#pendingNodeToken = null;
+    if (token) {
+      this.#runtime.node_release(this.#requestId, token);
+    }
+  }
   #assertOpen() {
     if (this.#closed || !this.#nodeToken) {
       throw featureError("runtime-closed", "the WebCodecs input adapter is closed");

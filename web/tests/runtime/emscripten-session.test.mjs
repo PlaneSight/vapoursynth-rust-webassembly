@@ -100,6 +100,10 @@ function fakeModule(overrides = {}) {
     },
     _malloc: malloc,
     _free: free,
+    _vs_browser_threading_mode() {
+      return overrides.threadingMode ?? 0;
+    },
+
 
     _vs_rust_core_create(outSlot, outGeneration) {
       calls.push(["core_create"]);
@@ -203,6 +207,107 @@ test("requires the full generic Rust export surface at construction", () => {
     () => new EmscriptenSession(null),
     (error) => error instanceof TypeError,
   );
+});
+
+test("requires the threading mode export when no explicit build mode is supplied", () => {
+  const module = fakeModule();
+  delete module._vs_browser_threading_mode;
+  assert.throws(
+    () => new EmscriptenSession(module),
+    (error) => error instanceof TypeError && /_vs_browser_threading_mode/.test(error.message),
+  );
+});
+
+test("reports the default module as an active single-thread runtime", () => {
+  const status = JSON.parse(new EmscriptenSession(fakeModule()).status());
+
+  assert.equal(status.threading.compiled, "single-thread");
+  assert.equal(status.threading.requested, "single-thread");
+  assert.equal(status.threading.active, "single-thread");
+  assert.equal(status.threading.available, true);
+  assert.equal(status.threading.fallback, true);
+  assert.equal(status.threading.reason, "single-thread-build");
+});
+
+test("reports a threaded module unavailable without isolation instead of falling back", () => {
+  const session = new EmscriptenSession(fakeModule({ threadingMode: 1 }), {
+    requestedMode: "threaded",
+    crossOriginIsolated: false,
+    sharedArrayBufferAvailable: true,
+  });
+  const status = JSON.parse(session.status());
+
+  assert.equal(status.threading.compiled, "threaded");
+  assert.equal(status.threading.active, "unavailable");
+  assert.equal(status.threading.available, false);
+  assert.equal(status.threading.reason, "cross-origin-isolation-required");
+  assert.throws(
+    () => session.core_create(1),
+    (error) => error.code === "threading-unavailable",
+  );
+});
+
+test("reports a threaded module active when isolation prerequisites are present", () => {
+  const status = JSON.parse(new EmscriptenSession(fakeModule({ threadingMode: 1 }), {
+    requestedMode: "threaded",
+    crossOriginIsolated: true,
+    sharedArrayBufferAvailable: true,
+  }).status());
+
+  assert.equal(status.threading.compiled, "threaded");
+  assert.equal(status.threading.active, "threaded");
+  assert.equal(status.threading.available, true);
+  assert.equal(status.threading.reason, "threaded-build");
+});
+
+test("discovers threaded mode from the native export", () => {
+  const status = JSON.parse(new EmscriptenSession(fakeModule({ threadingMode: 1 }), {
+    requestedMode: "threaded",
+    crossOriginIsolated: true,
+    sharedArrayBufferAvailable: true,
+  }).status());
+
+  assert.equal(status.threading.compiled, "threaded");
+  assert.equal(status.threading.active, "threaded");
+});
+
+test("reports missing SharedArrayBuffer without downgrading a threaded artifact", () => {
+  const status = JSON.parse(new EmscriptenSession(fakeModule({ threadingMode: 1 }), {
+    requestedMode: "threaded",
+    crossOriginIsolated: true,
+    sharedArrayBufferAvailable: false,
+  }).status());
+
+  assert.equal(status.threading.active, "unavailable");
+  assert.equal(status.threading.available, false);
+  assert.equal(status.threading.reason, "shared-array-buffer-unavailable");
+});
+
+test("reports a requested and compiled threading mode mismatch", () => {
+  const status = JSON.parse(new EmscriptenSession(fakeModule(), {
+    requestedMode: "threaded",
+    crossOriginIsolated: true,
+    sharedArrayBufferAvailable: true,
+  }).status());
+
+  assert.equal(status.threading.compiled, "single-thread");
+  assert.equal(status.threading.active, "unavailable");
+  assert.equal(status.threading.reason, "threading-artifact-mismatch");
+});
+
+test("reports a supplied compiled mode mismatch against the native export", () => {
+  const status = JSON.parse(new EmscriptenSession(fakeModule({ threadingMode: 0 }), {
+    compiledMode: "threaded",
+    crossOriginIsolated: true,
+    sharedArrayBufferAvailable: true,
+  }).status());
+
+  assert.equal(status.threading.compiled, "single-thread");
+  assert.equal(status.threading.requested, "threaded");
+  assert.equal(status.threading.active, "unavailable");
+  assert.equal(status.threading.available, false);
+  assert.equal(status.threading.fallback, false);
+  assert.equal(status.threading.reason, "threading-artifact-mismatch");
 });
 
 test("creates and releases one Rust core through opaque tokens", () => {

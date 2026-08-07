@@ -26,9 +26,9 @@ The generation-checked runtime exposes clip metadata (`numFrames`, `fpsNum` / `f
 
 Cancellation and explicit limits are implemented and tested: worker-side 256 ops / 64 outputs, authoring-side 64 ops / 64 args / 4096 array values / 16 outputs / 64 KiB plan data, `script-timeout` / `plan-limit` error codes, and full lease release on reset, failure, and shutdown.
 
-## 6. Optional threaded runtime
+## 6. Optional threaded runtime — implemented
 
-Measure the single-worker scheduler first. Then add an opt-in threaded build guarded by cross-origin isolation and `SharedArrayBuffer`, while retaining a single-thread fallback.
+The default browser artifact remains the measured single-worker fallback. An explicit `browser_threaded` Meson build enables the upstream scheduler with a bounded Emscripten pthread pool and reports its compiled/effective mode through runtime status. Use that artifact only behind `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`, and `SharedArrayBuffer`; an unisolated threaded artifact reports `unavailable`, while the default artifact remains usable without those headers. The bridge request path stays serialized because its opaque-handle table and source storage are not concurrent-call APIs.
 
 ## 7. Plugin porting framework
 

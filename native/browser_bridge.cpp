@@ -23,11 +23,21 @@ namespace {
 
 constexpr size_t maximum_rgba_bytes = 16U * 1024U * 1024U;
 constexpr size_t maximum_source_bytes = 64U * 1024U * 1024U;
+constexpr size_t maximum_persistent_source_bytes = maximum_source_bytes - maximum_rgba_bytes;
 constexpr size_t upstream_frame_guard_space = 64;
 constexpr size_t upstream_frame_metadata_bytes = 1024;
 constexpr uint32_t rgb24_video_format_id = UINT32_C(537395200);
 constexpr uint32_t frame_timing_duration = UINT32_C(1);
 constexpr uint32_t frame_timing_absolute = UINT32_C(2);
+
+#if defined(VS_BROWSER_THREADED)
+#ifndef VS_BROWSER_THREAD_POOL_SIZE
+#define VS_BROWSER_THREAD_POOL_SIZE 4
+#endif
+constexpr int browser_thread_count = VS_BROWSER_THREAD_POOL_SIZE;
+#else
+constexpr int browser_thread_count = 1;
+#endif
 
 class Core final {
 public:
@@ -136,7 +146,8 @@ struct FrameBudget final {
     size_t allocated_bytes = 0;
 
     [[nodiscard]] bool reserve(size_t bytes) noexcept {
-        if (bytes > maximum_source_bytes || allocated_bytes > maximum_source_bytes - bytes) {
+        if (bytes > maximum_persistent_source_bytes ||
+            allocated_bytes > maximum_persistent_source_bytes - bytes) {
             return false;
         }
         allocated_bytes += bytes;
@@ -439,7 +450,7 @@ struct FrameInfo final {
     if (core->get() == nullptr) {
         return VS_BROWSER_STATUS_CORE_UNAVAILABLE;
     }
-    if (api->setThreadCount(1, core->get()) != 1) {
+    if (api->setThreadCount(browser_thread_count, core->get()) != browser_thread_count) {
         return VS_BROWSER_STATUS_CORE_UNAVAILABLE;
     }
 
@@ -892,13 +903,14 @@ HandleTable handles;
     if (!rgba_byte_count(width, height, rgba_bytes) ||
         rgba_bytes == 0 ||
         !source_frame_byte_count(width, height, source_frame_bytes) ||
-        source_frame_bytes > maximum_source_bytes / static_cast<size_t>(num_frames)) {
+        source_frame_bytes >
+            maximum_persistent_source_bytes / static_cast<size_t>(num_frames)) {
         return VS_BROWSER_STATUS_INVALID_ARGUMENT;
     }
     constexpr size_t slot_bytes = sizeof(SourceData::FrameSlot);
-    if (slot_bytes > maximum_source_bytes - source_frame_bytes ||
+    if (slot_bytes > maximum_persistent_source_bytes - source_frame_bytes ||
         static_cast<size_t>(num_frames) >
-            maximum_source_bytes / (source_frame_bytes + slot_bytes)) {
+            maximum_persistent_source_bytes / (source_frame_bytes + slot_bytes)) {
         return VS_BROWSER_STATUS_INVALID_ARGUMENT;
     }
 
@@ -964,13 +976,25 @@ HandleTable handles;
 
     const VSVideoInfo *video_info = api->getVideoInfo(node->node.get());
     if (video_info == nullptr || video_info->width <= 0 || video_info->height <= 0 ||
-        video_info->numFrames < 0) {
+        video_info->numFrames <= 0) {
+        return VS_BROWSER_STATUS_NODE_UNAVAILABLE;
+    }
+    const bool has_fps = video_info->fpsNum != 0 || video_info->fpsDen != 0;
+    if (has_fps && (video_info->fpsNum <= 0 || video_info->fpsDen <= 0)) {
         return VS_BROWSER_STATUS_NODE_UNAVAILABLE;
     }
     const VSVideoFormat &format = video_info->format;
     if (format.colorFamily != cfRGB || format.sampleType != stInteger ||
-        format.bitsPerSample != 8 || format.bytesPerSample != 1 || format.numPlanes != 3) {
+        format.bitsPerSample != 8 || format.bytesPerSample != 1 || format.numPlanes != 3 ||
+        format.subSamplingW != 0 || format.subSamplingH != 0) {
         return VS_BROWSER_STATUS_UNEXPECTED_FRAME;
+    }
+    size_t rgba_bytes = 0;
+    if (!rgba_byte_count(
+            static_cast<uint32_t>(video_info->width),
+            static_cast<uint32_t>(video_info->height),
+            rgba_bytes)) {
+        return VS_BROWSER_STATUS_NODE_UNAVAILABLE;
     }
 
     width = static_cast<uint32_t>(video_info->width);
@@ -1039,8 +1063,8 @@ HandleTable handles;
     if (!std::isnan(absolute_time) && !std::isfinite(absolute_time)) {
         return VS_BROWSER_STATUS_INVALID_ARGUMENT;
     }
-
     const VSVideoInfo &video_info = node->source->video_info();
+    const VSAPI *api = node->core->api();
     SourceData::FrameSlot *slot = node->source->slot(frame_number);
     if (slot == nullptr || video_info.width <= 0 || video_info.height <= 0) {
         return VS_BROWSER_STATUS_INVALID_ARGUMENT;
@@ -1057,20 +1081,32 @@ HandleTable handles;
         required_rgba_bytes > static_cast<size_t>(rgba_size)) {
         return VS_BROWSER_STATUS_INVALID_ARGUMENT;
     }
-    const VSAPI *api = node->source->api();
-    if (!node->source->reserve_frame_bytes()) {
+    const std::shared_ptr<FrameAllocation> &existing_allocation = slot->frame.allocation();
+    const bool can_reuse_allocation =
+        slot->uploaded && existing_allocation != nullptr &&
+        existing_allocation.use_count() == 1 &&
+        existing_allocation->budget == node->source->budget() &&
+        existing_allocation->bytes == node->source->frame_bytes();
+    std::shared_ptr<FrameAllocation> reused_allocation;
+    if (can_reuse_allocation) {
+        reused_allocation = existing_allocation;
+    }
+
+    const bool needs_reservation = reused_allocation == nullptr;
+    if (needs_reservation && !node->source->reserve_frame_bytes()) {
         return VS_BROWSER_STATUS_FRAME_UNAVAILABLE;
     }
 
     struct FrameReservation final {
         SourceData *source;
+        bool reserved;
         ~FrameReservation() {
-            if (source != nullptr) {
+            if (source != nullptr && reserved) {
                 source->release_frame_bytes();
             }
         }
         void commit() noexcept { source = nullptr; }
-    } reservation{node->source.get()};
+    } reservation{node->source.get(), needs_reservation};
 
     VSFrame *destination = api->newVideoFrame(
         &video_info.format,
@@ -1122,9 +1158,14 @@ HandleTable handles;
         return VS_BROWSER_STATUS_MAP_WRITE_FAILED;
     }
 
-    replacement.set_allocation(std::make_shared<FrameAllocation>(
-        node->source->budget(),
-        node->source->frame_bytes()));
+    if (reused_allocation != nullptr) {
+        replacement.set_allocation(std::move(reused_allocation));
+        slot->frame.set_allocation(std::shared_ptr<FrameAllocation>{});
+    } else {
+        replacement.set_allocation(std::make_shared<FrameAllocation>(
+            node->source->budget(),
+            node->source->frame_bytes()));
+    }
     slot->frame = std::move(replacement);
     slot->uploaded = true;
     reservation.commit();
@@ -1211,6 +1252,14 @@ template <typename Action>
 
 extern "C" uint32_t vs_browser_handle_abi_version(void) noexcept {
     return VS_BROWSER_HANDLE_ABI_VERSION;
+}
+
+extern "C" uint32_t vs_browser_threading_mode(void) noexcept {
+#if defined(VS_BROWSER_THREADED)
+    return 1;
+#else
+    return 0;
+#endif
 }
 
 extern "C" vs_browser_status vs_browser_core_create(uint32_t *out_slot, uint32_t *out_generation) noexcept {

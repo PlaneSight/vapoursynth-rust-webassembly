@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/vapoursynth/vapoursynth.git",
+    "commit": "37eed3ddbdb61e92975d9a4b054a488e93fc9a1c",
+    "nativePatches": [],
+    "browserPatches": [
+      "patches/vapoursynth/0001-static-browser-runtime.patch"
+    ],
+    "nativeMesonOptions": [
+      "enable_x86_asm=false",
+      "enable_arm_asm=false"
+    ]
+  },
+  "cases": [
+    {
+      "name": "addborders-asym.plan",
+      "plan": "addborders-asym.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 330,
+          "height": 194,
+          "strides": [
+            1320
+          ],
+          "rgba": "addborders-asym.rgba.bin",
+          "sha256": "ba67f3fce2b09317a7631d07fbdc9d47938fa94fe8ee5e4e516ca0193765f733"
+        }
+      ]
+    },
+    {
+      "name": "blankclip-color.plan",
+      "plan": "blankclip-color.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "blankclip-color.rgba.bin",
+          "sha256": "5f02b639a42d8a2da41501a1de70424c783a23f927a9a591514b999c41062455"
+        }
+      ]
+    },
+    {
+      "name": "crop-color.plan",
+      "plan": "crop-color.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 240,
+          "height": 120,
+          "strides": [
+            960
+          ],
+          "rgba": "crop-color.rgba.bin",
+          "sha256": "ec2ee40760506953b4b67311ba8bf75fa5142267fdd20b733cb8cbdfe4afb983"
+        }
+      ]
+    },
+    {
+      "name": "expr-add96.plan",
+      "plan": "expr-add96.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "expr-add96.rgba.bin",
+          "sha256": "06e564209cb04c6f7872243f3bdc60296ee2884a26607b5c073681fc0833ded4"
+        }
+      ]
+    },
+    {
+      "name": "fliph-asym.plan",
+      "plan": "fliph-asym.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 330,
+          "height": 194,
+          "strides": [
+            1320
+          ],
+          "rgba": "fliph-asym.rgba.bin",
+          "sha256": "7da81fdef00605a86495a611b8d6cbc1a26c9e8495bf90a8f19a15d2d080fea4"
+        }
+      ]
+    },
+    {
+      "name": "flipv-asym.plan",
+      "plan": "flipv-asym.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 330,
+          "height": 194,
+          "strides": [
+            1320
+          ],
+          "rgba": "flipv-asym.rgba.bin",
+          "sha256": "49f92fe2ff72a97683a2d553a110c42a827011246471e4ef5992762b5515aeca"
+        }
+      ]
+    },
+    {
+      "name": "invert-color.plan",
+      "plan": "invert-color.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "invert-color.rgba.bin",
+          "sha256": "ddc24f42836ef45c7f093b0ffbc009163f2f88613461983ac65725fc97f1b752"
+        }
+      ]
+    },
+    {
+      "name": "invert-without-clip.plan",
+      "plan": "invert-without-clip.plan.json",
+      "outcome": "error",
+      "error": {
+        "stage": "invoke",
+        "operation": 1,
+        "status": 7,
+        "code": "invocation-failed",
+        "message": "Invert: argument clip is required"
+      }
+    },
+    {
+      "name": "levels-16-235.plan",
+      "plan": "levels-16-235.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "levels-16-235.rgba.bin",
+          "sha256": "389bbbff64cf886ecc55f8d3ba54b5f3734ff82419574f2c1b8e5b5932bf6eb3"
+        }
+      ]
+    },
+    {
+      "name": "lut-invert.plan",
+      "plan": "lut-invert.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "lut-invert.rgba.bin",
+          "sha256": "ddc24f42836ef45c7f093b0ffbc009163f2f88613461983ac65725fc97f1b752"
+        }
+      ]
+    },
+    {
+      "name": "maximum-flat.plan",
+      "plan": "maximum-flat.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "maximum-flat.rgba.bin",
+          "sha256": "5f02b639a42d8a2da41501a1de70424c783a23f927a9a591514b999c41062455"
+        }
+      ]
+    },
+    {
+      "name": "median-flat.plan",
+      "plan": "median-flat.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "median-flat.rgba.bin",
+          "sha256": "5f02b639a42d8a2da41501a1de70424c783a23f927a9a591514b999c41062455"
+        }
+      ]
+    },
+    {
+      "name": "minimum-flat.plan",
+      "plan": "minimum-flat.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "minimum-flat.rgba.bin",
+          "sha256": "5f02b639a42d8a2da41501a1de70424c783a23f927a9a591514b999c41062455"
+        }
+      ]
+    },
+    {
+      "name": "shuffleplanes-rgb.plan",
+      "plan": "shuffleplanes-rgb.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 180,
+          "strides": [
+            1280
+          ],
+          "rgba": "shuffleplanes-rgb.rgba.bin",
+          "sha256": "5f02b639a42d8a2da41501a1de70424c783a23f927a9a591514b999c41062455"
+        }
+      ]
+    },
+    {
+      "name": "stackh-two.plan",
+      "plan": "stackh-two.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 640,
+          "height": 180,
+          "strides": [
+            2560
+          ],
+          "rgba": "stackh-two.rgba.bin",
+          "sha256": "ccb3ed03180658e9bb66c0e4dd8e3ffafa116b73800d795f4b534e21d361e16f"
+        }
+      ]
+    },
+    {
+      "name": "stackv-two.plan",
+      "plan": "stackv-two.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 320,
+          "height": 360,
+          "strides": [
+            1280
+          ],
+          "rgba": "stackv-two.rgba.bin",
+          "sha256": "10789a5db4d89c23d48ea70aaaf36212218adc9e80c6ad859c48a27f2e49d944"
+        }
+      ]
+    },
+    {
+      "name": "transpose-asym.plan",
+      "plan": "transpose-asym.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 194,
+          "height": 330,
+          "strides": [
+            776
+          ],
+          "rgba": "transpose-asym.rgba.bin",
+          "sha256": "def5947d6c06ff98d59ff33f0137c1d7f93f0e1741d78973e1e2e125bdb9d9d8"
+        }
+      ]
+    },
+    {
+      "name": "turn180-asym.plan",
+      "plan": "turn180-asym.plan.json",
+      "outcome": "frame",
+      "outputs": [
+        {
+          "index": 0,
+          "format": "RGB24",
+          "width": 330,
+          "height": 194,
+          "strides": [
+            1320
+          ],
+          "rgba": "turn180-asym.rgba.bin",
+          "sha256": "e28d4b9cfef7226776447a5d4a4256a5dbd9e100a6cce603301bbc7ea6c70e52"
+        }
+      ]
+    },
+    {
+      "name": "unknown-function.plan",
+      "plan": "unknown-function.plan.json",
+      "outcome": "error",
+      "error": {
+        "stage": "invoke",
+        "operation": 1,
+        "status": 18,
+        "code": "unknown-function",
+        "message": ""
+      }
+    }
+  ]
+}

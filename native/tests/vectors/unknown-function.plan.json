@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "id": 1,
+      "namespace": "std",
+      "function": "DefinitelyNotAFunction",
+      "arguments": []
+    }
+  ],
+  "outputs": [
+    {
+      "index": 0,
+      "node": 1,
+      "expected": "unknown-function.rgba.bin"
+    }
+  ],
+  "expectedFailure": {
+    "stage": "invoke",
+    "operation": 1,
+    "status": 18,
+    "code": "unknown-function",
+    "message": ""
+  }
+}

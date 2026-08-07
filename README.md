@@ -4,8 +4,8 @@ This project compiles the real upstream VapourSynth core to WebAssembly with Ems
 
 ## Status
 
-- The `browser-integration` CI job builds the pinned upstream core with the Rust layer and Emscripten module, then runs the native, Rust, protocol, integration, and browser suites.
-- A 17-filter common stdlib corpus executes end to end in the browser (Pyodide → RPC → Emscripten VapourSynth → canvas) with byte-exact pixels; every vector is also proven byte-exact by the native `render_plan` harness.
+- The `browser-integration` CI job first runs a read-only host-native conformance check against the unpatched, repository-pinned VapourSynth sources, then builds the patched Emscripten module and runs the browser and Playwright checks.
+- The checked-in 17-case std corpus records native-oracle RGBA bytes and frame metadata plus two normalized upstream failures; the Emscripten/Node and Playwright paths must match those records for the selected cases.
 - Python authoring runs synchronously in a Pyodide worker and drains a graph plan that the VapourSynth worker executes generically.
 - Unsupported APIs fail with explicit errors rather than silently emulating desktop behaviour.
 
@@ -18,7 +18,7 @@ uv sync --locked
 npm run serve
 ```
 
-Open `http://localhost:4173/` — the root redirects to `/app/` (ES modules and nested module workers need an HTTP(S) origin, not `file://`). `npm run serve` serves the production distribution with `uv run --locked python -m http.server 4173 --directory build/web`. The build applies the pinned upstream patch, compiles the Emscripten module, and runs the native suites (including the byte-exact corpus harness); generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
+Open `http://localhost:4173/` — the root redirects to `/app/` (ES modules and nested module workers need an HTTP(S) origin, not `file://`). `npm run serve` serves the production distribution with `uv run --locked python -m http.server 4173 --directory build/web`. The browser build applies the locked browser-only upstream patch, compiles the Emscripten module, and runs its Emscripten/Node checks; host-native conformance is a separate check. Generated artifacts land in `build/emscripten/`, `build/web/`, and `build/test/`.
 
 ## Browser tests
 
@@ -28,6 +28,27 @@ npm run test:browser:build  # ./tools/build-browser.sh, then the tests
 ```
 
 `npm run test:browser` runs the Playwright spec in `web/tests/browser/` in headless Chromium against the production bundle in `build/web`, served under a subpath (`/web/app/`) so tests exercise the same base-path resolution as the GitHub Pages project site at `/vapoursynth-rust-webassembly/`. All demo URLs are relative, so the identical distribution works at any base path.
+
+## Conformance
+
+The host-native check builds the unpatched, pinned VapourSynth source with the normal native scheduler and verifies the checked-in corpus. It is read-only by default:
+
+```bash
+./tools/build-native-conformance.sh
+```
+
+Refreshing generated vectors is explicitly opt-in and replaces the checked-in corpus only when requested:
+
+```bash
+uv run --locked python native/tests/generate_corpus.py --runner build/native-conformance/native/vapoursynth-native-conformance --refresh
+```
+
+The browser build and production test are separate:
+
+```bash
+./tools/build-browser.sh
+npm run test:browser
+```
 
 ## Architecture
 
@@ -56,10 +77,11 @@ Rust handles only typed copies of thread-affine tokens; the C++ bridge owns the 
 
 ## Development
 
-Prerequisites: Git, Node, UV, Rust 1.85.0 with the `wasm32-unknown-emscripten` target, and the Emscripten SDK on `PATH`. UV manages Python and Meson from `pyproject.toml` and `uv.lock`; Cargo and npm own their own dependency graphs (`Cargo.lock`, `package-lock.json`).
+Prerequisites: Git with recursive submodule support, a C++ compiler and `libzimg-dev` (on Debian/Ubuntu), Node, UV, Rust 1.85.0 with the `wasm32-unknown-emscripten` target, and the Emscripten SDK on `PATH`. UV manages Python and Meson from `pyproject.toml` and `uv.lock`; Cargo and npm own their own dependency graphs (`Cargo.lock`, `package-lock.json`). The native oracle uses the pinned `vendor/vapoursynth` submodule; it does not install or discover a system or unpinned VapourSynth.
 
 ```bash
 uv sync --locked
+./tools/build-native-conformance.sh
 cargo test --workspace --locked
 npm ci
 npm test

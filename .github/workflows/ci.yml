@@ -90,6 +90,10 @@ jobs:
           enable-cache: true
       - name: Sync UV tools
         run: uv sync --locked
+      - name: Install native conformance dependency
+        run: sudo apt-get update && sudo apt-get install -y libzimg-dev
+      - name: Verify host-native VapourSynth conformance
+        run: ./tools/build-native-conformance.sh
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: clippy

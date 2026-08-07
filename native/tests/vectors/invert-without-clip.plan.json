@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "id": 1,
+      "namespace": "std",
+      "function": "Invert",
+      "arguments": []
+    }
+  ],
+  "outputs": [
+    {
+      "index": 0,
+      "node": 1,
+      "expected": "invert-without-clip.rgba.bin"
+    }
+  ],
+  "expectedFailure": {
+    "stage": "invoke",
+    "operation": 1,
+    "status": 7,
+    "code": "invocation-failed",
+    "message": "Invert: argument clip is required"
+  }
+}

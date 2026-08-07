@@ -1,0 +1,6 @@
+option(
+    'native_upstream_build',
+    type: 'string',
+    value: '',
+    description: 'Build directory containing the pinned native VapourSynth libraries',
+)

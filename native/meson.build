@@ -1,4 +1,73 @@
 if host_machine.system() != 'emscripten'
+    native_upstream_build = get_option('native_upstream_build')
+    if native_upstream_build == ''
+        error('native builds require -Dnative_upstream_build=/path/to/vapoursynth/build')
+    endif
+
+    native_cpp = meson.get_compiler('cpp')
+    native_upstream_includes = include_directories(
+        '../vendor/vapoursynth/include',
+    )
+    native_upstream = native_cpp.find_library(
+        'vapoursynth',
+        dirs: native_upstream_build,
+        required: true,
+    )
+    native_cpp_args = [
+        '-DVS_GRAPH_API',
+        '-DVS_USE_LATEST_API',
+        '-fexceptions',
+        '-fno-char8_t',
+    ]
+    native_bridge = static_library(
+        'vapoursynth-native-bridge',
+        'browser_bridge.cpp',
+        cpp_args: native_cpp_args,
+        include_directories: native_upstream_includes,
+        override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
+    )
+    native_runner = executable(
+        'vapoursynth-native-conformance',
+        'tests/render_plan.cpp',
+        cpp_args: native_cpp_args,
+        include_directories: native_upstream_includes,
+        link_with: native_bridge,
+        dependencies: [native_upstream],
+        build_rpath: native_upstream_build,
+        override_options: ['cpp_std=c++20', 'warning_level=3', 'werror=true'],
+    )
+    native_corpus_vectors = [
+        'blankclip-color',
+        'invert-color',
+        'crop-color',
+        'addborders-asym',
+        'fliph-asym',
+        'flipv-asym',
+        'turn180-asym',
+        'transpose-asym',
+        'stackh-two',
+        'stackv-two',
+        'lut-invert',
+        'expr-add96',
+        'levels-16-235',
+        'median-flat',
+        'minimum-flat',
+        'maximum-flat',
+        'shuffleplanes-rgb',
+        'unknown-function',
+        'invert-without-clip',
+    ]
+    foreach vector : native_corpus_vectors
+        test(
+            'native conformance plan ' + vector,
+            native_runner,
+            args: [join_paths(meson.project_source_root(), 'native', 'tests', 'vectors', vector + '.plan.json')],
+        )
+    endforeach
+    subdir_done()
+endif
+
+if host_machine.system() != 'emscripten'
     error('The browser render-invert proof must be configured with toolchains/emscripten.ini')
 endif
 
@@ -112,6 +181,8 @@ corpus_vectors = [
     'minimum-flat',
     'maximum-flat',
     'shuffleplanes-rgb',
+    'unknown-function',
+    'invert-without-clip',
 ]
 
 foreach vector : corpus_vectors

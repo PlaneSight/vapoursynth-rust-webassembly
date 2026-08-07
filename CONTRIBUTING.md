@@ -29,16 +29,25 @@ Run these exactly; they are the baseline CI enforces:
 | Web runtime and protocol tests | `npm test` |
 | Python binding tests | `uv run --locked python -m unittest discover -s web/python -p 'test_*.py'` |
 | Full browser build | `./tools/build-browser.sh` |
+| Host-native conformance check (read-only) | `./tools/build-native-conformance.sh` |
 
-CI also runs `cargo fmt --all --check` and `cargo clippy --locked --workspace --all-targets -- -D warnings`; run both locally before requesting review. The `browser-integration` CI job is the stable evidence for browser behavior; its reference conformance test is `native/tests/render_invert.cpp`.
+CI also runs `cargo fmt --all --check` and `cargo clippy --locked --workspace --all-targets -- -D warnings`; run both locally before requesting review. The `browser-integration` job is the stable evidence for the selected conformance cases: it checks the host-native oracle first, then the Emscripten/Node browser build and Playwright suite. CI uses the read-only check and never refreshes checked-in vectors.
 
 ## Generated files
 
-`build/` is generated output: it is never hand-edited and never committed. The final generated locations are `build/emscripten/`, `build/web/`, and `build/test/`, regenerated with `./tools/build-browser.sh`. Never patch a generated file — fix the source and regenerate.
+`build/` is generated output: it is never hand-edited and never committed. The final generated locations are `build/emscripten/`, `build/web/`, and `build/test/`, regenerated with `./tools/build-browser.sh`. The checked-in `native/tests/vectors/` corpus is generated evidence, not a hand-maintained golden set; do not edit it directly.
+
+Refreshing the conformance corpus is an explicit, opt-in developer action:
+
+```bash
+uv run --locked python native/tests/generate_corpus.py --runner build/native-conformance/vapoursynth-native-conformance --refresh
+```
+
+Ordinary `./tools/build-native-conformance.sh` checks compare the generated success bytes and frame metadata plus the two normalized upstream failure cases without modifying the checkout.
 
 ## Upstream patches
 
-`vendor/vapoursynth/` is a pinned checkout of upstream VapourSynth; its commit is recorded in `third_party/lock.toml`. Do not make unrecorded edits there: `tools/apply_upstream_patches.py` (run by `./tools/build-browser.sh`) restores the locked state, so unrecorded vendor changes cannot survive a build.
+`vendor/vapoursynth/` is the repository-pinned upstream checkout; its commit is recorded in `third_party/lock.toml`. The host-native oracle builds that checkout and the adjacent `libvapoursynthfilters` without the browser patch, while `./tools/build-browser.sh` applies the locked browser-only patch temporarily. Neither path installs or discovers a system or unpinned VapourSynth.
 
 To change upstream behavior:
 
@@ -53,7 +62,9 @@ Runtime layout: `web/app` (demo), `web/runtime` (per-backend workers and session
 
 Preserve worker and ABI ownership boundaries. Raw upstream pointers must not cross Rust, JavaScript, Python, or worker interfaces: `crates/vapoursynth-sys` describes only the stable browser-bridge ABI (fixed-width statuses and opaque tokens), `crates/vapoursynth-core` owns the safe, thread-affine Rust layer over those tokens, the C++ bridge retains all upstream pointers, and `web/protocol` is the only crossing point for worker messages.
 
-- Do not claim desktop VapourSynth compatibility without an executable test.
+The host-native oracle uses VapourSynth's normal native scheduler. The Emscripten browser build is a separate, patched single-thread configuration; agreement for the checked-in cases does not establish scheduler, desktop, or all-plugin compatibility.
+
+- Do not claim desktop VapourSynth compatibility without an executable test; the selected native corpus is not a whole-API or plugin guarantee.
 - Each newly supported API requires a conformance test that exercises real upstream behavior; unsupported states must be explicit, never silent.
 - Prefer a clear, minimal implementation over a speculative abstraction or unmeasured optimization.
 - Retain the pinned `uv.lock`, `Cargo.lock`, and `package-lock.json` when changing their corresponding dependency graphs.

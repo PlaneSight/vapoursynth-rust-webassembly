@@ -15,11 +15,18 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
+#include <filesystem>
+#include <limits>
+#include <optional>
+#include <system_error>
+#include <utility>
 
 namespace {
 
@@ -406,12 +413,22 @@ struct PlanOperation final {
 struct PlanOutput final {
     int64_t index = 0;
     int64_t node_id = 0;
-    std::string expected; // empty when the plan names no fixture
+    std::string expected;      // resolved path; empty when the plan names no fixture
+    std::string expected_name; // original fixture name for oracle output
+};
+
+struct ExpectedFailure final {
+    std::string stage;
+    int64_t operation = 0;
+    vs_browser_status status = VS_BROWSER_STATUS_OK;
+    std::string code;
+    std::string message;
 };
 
 struct Plan final {
     std::vector<PlanOperation> operations;
     std::vector<PlanOutput> outputs;
+    std::optional<ExpectedFailure> expected_failure;
 };
 
 [[nodiscard]] bool require_member(
@@ -459,6 +476,57 @@ struct Plan final {
         error = "plan version must be the integer 1";
         return false;
     }
+    if (const Json *expected_failure = root.member("expectedFailure"); expected_failure != nullptr) {
+        if (expected_failure->kind != Json::Kind::Object) {
+            error = "plan expectedFailure must be an object";
+            return false;
+        }
+        if (!require_member(*expected_failure, "stage", "expectedFailure", error) ||
+            !require_member(*expected_failure, "operation", "expectedFailure", error) ||
+            !require_member(*expected_failure, "status", "expectedFailure", error) ||
+            !require_member(*expected_failure, "code", "expectedFailure", error) ||
+            !require_member(*expected_failure, "message", "expectedFailure", error)) {
+            return false;
+        }
+
+        const Json *stage = expected_failure->member("stage");
+        const Json *operation = expected_failure->member("operation");
+        const Json *status = expected_failure->member("status");
+        const Json *code = expected_failure->member("code");
+        const Json *message = expected_failure->member("message");
+        if (stage->kind != Json::Kind::String ||
+            (stage->string != "invoke" && stage->string != "frame")) {
+            error = "plan expectedFailure stage must be \"invoke\" or \"frame\"";
+            return false;
+        }
+        if (operation->kind != Json::Kind::Number || !operation->integral || operation->integer < 0) {
+            error = "plan expectedFailure operation must be a non-negative integer";
+            return false;
+        }
+        if (status->kind != Json::Kind::Number || !status->integral ||
+            status->integer < std::numeric_limits<int32_t>::min() ||
+            status->integer > std::numeric_limits<int32_t>::max()) {
+            error = "plan expectedFailure status must be a 32-bit integer";
+            return false;
+        }
+        if (code->kind != Json::Kind::String || code->string.empty()) {
+            error = "plan expectedFailure code must be a non-empty string";
+            return false;
+        }
+        if (message->kind != Json::Kind::String) {
+            error = "plan expectedFailure message must be a string";
+            return false;
+        }
+
+        plan.expected_failure = ExpectedFailure{
+            stage->string,
+            operation->integer,
+            static_cast<vs_browser_status>(status->integer),
+            code->string,
+            message->string,
+        };
+    }
+
 
     const Json *operations = root.member("operations");
     if (operations == nullptr || operations->kind != Json::Kind::Array || operations->array.empty()) {
@@ -666,6 +734,7 @@ struct Plan final {
                 error = "plan output expected must be a non-empty path string";
                 return false;
             }
+            output.expected_name = expected->string;
             output.expected = plan_directory.empty() ? expected->string : plan_directory + "/" + expected->string;
         }
 
@@ -770,8 +839,132 @@ struct HandleScope final {
     return true;
 }
 
-[[nodiscard]] bool execute_plan(Plan &plan) {
+const char *status_name(vs_browser_status status) {
+    switch (status) {
+    case VS_BROWSER_STATUS_OK: return "ok";
+    case VS_BROWSER_STATUS_INVALID_ARGUMENT: return "invalid-argument";
+    case VS_BROWSER_STATUS_OUTPUT_TOO_SMALL: return "output-too-small";
+    case VS_BROWSER_STATUS_API_UNAVAILABLE: return "api-unavailable";
+    case VS_BROWSER_STATUS_CORE_UNAVAILABLE: return "core-unavailable";
+    case VS_BROWSER_STATUS_STANDARD_PLUGIN_UNAVAILABLE: return "standard-plugin-unavailable";
+    case VS_BROWSER_STATUS_MAP_WRITE_FAILED: return "map-write-failed";
+    case VS_BROWSER_STATUS_INVOCATION_FAILED: return "invocation-failed";
+    case VS_BROWSER_STATUS_NODE_UNAVAILABLE: return "node-unavailable";
+    case VS_BROWSER_STATUS_FRAME_UNAVAILABLE: return "frame-unavailable";
+    case VS_BROWSER_STATUS_UNEXPECTED_FRAME: return "unexpected-frame";
+    case VS_BROWSER_STATUS_INTERNAL_FAILURE: return "internal-failure";
+    case VS_BROWSER_STATUS_FRAME_REQUEST_FAILED: return "frame-request-failed";
+    case VS_BROWSER_STATUS_INVALID_HANDLE: return "invalid-handle";
+    case VS_BROWSER_STATUS_HANDLE_KIND_MISMATCH: return "handle-kind-mismatch";
+    case VS_BROWSER_STATUS_HANDLE_TABLE_EXHAUSTED: return "handle-table-exhausted";
+    case VS_BROWSER_STATUS_CORE_ALREADY_ACTIVE: return "core-already-active";
+    case VS_BROWSER_STATUS_ABI_MISMATCH: return "abi-mismatch";
+    case VS_BROWSER_STATUS_UNKNOWN_FUNCTION: return "unknown-function";
+    default: return "upstream-error";
+    }
+}
+
+std::string json_escape(const std::string &value) {
+    std::string escaped;
+    escaped.reserve(value.size() + 8);
+    for (const unsigned char character : value) {
+        switch (character) {
+        case '"': escaped += "\\\""; break;
+        case '\\': escaped += "\\\\"; break;
+        case '\b': escaped += "\\b"; break;
+        case '\f': escaped += "\\f"; break;
+        case '\n': escaped += "\\n"; break;
+        case '\r': escaped += "\\r"; break;
+        case '\t': escaped += "\\t"; break;
+        default:
+            if (character < 0x20) {
+                char buffer[7];
+                std::snprintf(buffer, sizeof(buffer), "\\u%04x", character);
+                escaped += buffer;
+            } else {
+                escaped.push_back(static_cast<char>(character));
+            }
+            break;
+        }
+    }
+    return escaped;
+}
+
+void print_failure_json(
+    const std::string &stage,
+    int64_t operation,
+    vs_browser_status status,
+    const std::string &message) {
+    std::printf(
+        "{\"outcome\":\"error\",\"error\":{\"stage\":\"%s\",\"operation\":%lld,\"status\":%d,\"code\":\"%s\",\"message\":\"%s\"}}\n",
+        stage.c_str(),
+        static_cast<long long>(operation),
+        status,
+        status_name(status),
+        json_escape(message).c_str());
+}
+
+bool matches_expected_failure(
+    const Plan &plan,
+    const std::string &stage,
+    int64_t operation,
+    vs_browser_status status,
+    const std::string &message) {
+    if (!plan.expected_failure.has_value()) {
+        return false;
+    }
+    const ExpectedFailure &expected = *plan.expected_failure;
+    return expected.stage == stage &&
+        expected.operation == operation &&
+        expected.status == status &&
+        expected.code == status_name(status) &&
+        expected.message == message;
+}
+
+struct OracleOutput final {
+    int64_t index = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t stride = 0;
+    std::string rgba;
+};
+
+[[nodiscard]] bool execute_plan(
+    Plan &plan,
+    bool oracle,
+    const std::string &output_directory) {
     HandleScope handles;
+    std::vector<OracleOutput> oracle_outputs;
+
+    auto fail = [&](const char *stage, int64_t operation, vs_browser_status failure_status, const std::string &message) {
+        const std::string failure_stage(stage);
+        const bool matches = matches_expected_failure(plan, failure_stage, operation, failure_status, message);
+        if (oracle) {
+            print_failure_json(failure_stage, operation, failure_status, message);
+            return matches;
+        }
+        if (!plan.expected_failure.has_value()) {
+            std::fprintf(
+                stderr,
+                "%s failure operation=%lld status=%d code=%s message=%s\n",
+                stage,
+                static_cast<long long>(operation),
+                failure_status,
+                status_name(failure_status),
+                message.empty() ? "(empty)" : message.c_str());
+            return false;
+        }
+        std::fprintf(
+            stderr,
+            "%s failure operation=%lld status=%d code=%s message=%s%s\n",
+            stage,
+            static_cast<long long>(operation),
+            failure_status,
+            status_name(failure_status),
+            message.empty() ? "(empty)" : message.c_str(),
+            matches ? " (expected)" : " (unexpected)");
+        return matches;
+    };
 
     vs_browser_status status = vs_browser_core_create(&handles.core.slot, &handles.core.generation);
     if (!expect_status("core create", status, VS_BROWSER_STATUS_OK, nullptr) || !handles.core.valid()) {
@@ -779,11 +972,9 @@ struct HandleScope final {
     }
 
     std::map<int64_t, Token> node_by_id;
-
     for (PlanOperation &operation : plan.operations) {
         std::vector<vs_browser_argument> descriptors;
         descriptors.reserve(operation.arguments.size());
-
         for (PlanArgument &argument : operation.arguments) {
             if (argument.kind == VS_BROWSER_ARGUMENT_NODE) {
                 for (Token &reference : argument.nodes) {
@@ -812,18 +1003,10 @@ struct HandleScope final {
             descriptor.kind = argument.kind;
             descriptor.values = argument.storage.data();
             switch (argument.kind) {
-            case VS_BROWSER_ARGUMENT_INT:
-                descriptor.value_count = static_cast<uint32_t>(argument.ints.size());
-                break;
-            case VS_BROWSER_ARGUMENT_FLOAT:
-                descriptor.value_count = static_cast<uint32_t>(argument.floats.size());
-                break;
-            case VS_BROWSER_ARGUMENT_DATA:
-                descriptor.value_count = static_cast<uint32_t>(argument.data.size());
-                break;
-            case VS_BROWSER_ARGUMENT_NODE:
-                descriptor.value_count = static_cast<uint32_t>(argument.nodes.size());
-                break;
+            case VS_BROWSER_ARGUMENT_INT: descriptor.value_count = static_cast<uint32_t>(argument.ints.size()); break;
+            case VS_BROWSER_ARGUMENT_FLOAT: descriptor.value_count = static_cast<uint32_t>(argument.floats.size()); break;
+            case VS_BROWSER_ARGUMENT_DATA: descriptor.value_count = static_cast<uint32_t>(argument.data.size()); break;
+            case VS_BROWSER_ARGUMENT_NODE: descriptor.value_count = static_cast<uint32_t>(argument.nodes.size()); break;
             default:
                 std::fprintf(stderr, "internal error: unhandled argument kind\n");
                 return false;
@@ -851,24 +1034,19 @@ struct HandleScope final {
             &node.slot,
             &node.generation);
 
-        if (status == VS_BROWSER_STATUS_OK) {
+        if (status != VS_BROWSER_STATUS_OK) {
+            const std::string message = error_text[0] == '\0' ? std::string() : std::string(error_text.data());
+            return fail("invoke", operation.id, status, message);
+        }
+        if (!oracle) {
             std::printf(
                 "operation %lld %s.%s: OK\n",
                 static_cast<long long>(operation.id),
                 operation.namespace_name.c_str(),
                 operation.function.c_str());
-            node_by_id.emplace(operation.id, node);
-            handles.nodes.push_back(node);
-        } else {
-            std::printf(
-                "operation %lld %s.%s: FAILED status=%d error=%s\n",
-                static_cast<long long>(operation.id),
-                operation.namespace_name.c_str(),
-                operation.function.c_str(),
-                status,
-                error_text[0] != '\0' ? error_text.data() : "(no error text)");
-            return false;
         }
+        node_by_id.emplace(operation.id, node);
+        handles.nodes.push_back(node);
     }
 
     for (const PlanOutput &output : plan.outputs) {
@@ -885,12 +1063,7 @@ struct HandleScope final {
         Token frame;
         status = vs_browser_node_get_frame(found->second.slot, found->second.generation, 0, &frame.slot, &frame.generation);
         if (status != VS_BROWSER_STATUS_OK) {
-            std::fprintf(
-                stderr,
-                "output %lld frame request returned %d\n",
-                static_cast<long long>(output.index),
-                status);
-            return false;
+            return fail("frame", output.index, status, {});
         }
         handles.frames.push_back(frame);
 
@@ -898,34 +1071,38 @@ struct HandleScope final {
         uint32_t height = 0;
         status = vs_browser_frame_dimensions(frame.slot, frame.generation, &width, &height);
         if (status != VS_BROWSER_STATUS_OK) {
-            std::fprintf(
-                stderr,
-                "output %lld dimensions returned %d\n",
-                static_cast<long long>(output.index),
-                status);
-            return false;
+            return fail("frame", output.index, status, {});
         }
 
         uint32_t rgba_size = 0;
         status = vs_browser_frame_rgba8_size(frame.slot, frame.generation, &rgba_size);
         if (status != VS_BROWSER_STATUS_OK) {
-            std::fprintf(
-                stderr,
-                "output %lld rgba8 size returned %d\n",
-                static_cast<long long>(output.index),
-                status);
-            return false;
+            return fail("frame", output.index, status, {});
         }
 
         std::vector<uint8_t> rgba(static_cast<size_t>(rgba_size));
         status = vs_browser_frame_copy_rgba8(frame.slot, frame.generation, rgba.data(), rgba_size);
         if (status != VS_BROWSER_STATUS_OK) {
-            std::fprintf(
-                stderr,
-                "output %lld rgba8 copy returned %d\n",
-                static_cast<long long>(output.index),
-                status);
-            return false;
+            return fail("frame", output.index, status, {});
+        }
+
+        if (oracle) {
+            const std::string name = output.expected_name.empty()
+                ? ("output-" + std::to_string(output.index) + ".rgba.bin")
+                : std::filesystem::path(output.expected_name).filename().string();
+            const std::filesystem::path destination = std::filesystem::path(output_directory) / name;
+            std::ofstream stream(destination, std::ios::binary | std::ios::trunc);
+            if (!stream) {
+                std::fprintf(stderr, "could not open oracle output %s\n", destination.c_str());
+                return false;
+            }
+            stream.write(reinterpret_cast<const char *>(rgba.data()), static_cast<std::streamsize>(rgba.size()));
+            if (!stream) {
+                std::fprintf(stderr, "could not write oracle output %s\n", destination.c_str());
+                return false;
+            }
+            oracle_outputs.push_back({output.index, width, height, rgba_size / height, name});
+            continue;
         }
 
         if (output.expected.empty()) {
@@ -944,7 +1121,6 @@ struct HandleScope final {
             std::fprintf(stderr, "%s\n", read_error.c_str());
             return false;
         }
-
         if (expected.size() != rgba.size()) {
             std::fprintf(
                 stderr,
@@ -963,15 +1139,7 @@ struct HandleScope final {
                 break;
             }
         }
-
-        if (first_difference == SIZE_MAX) {
-            std::printf(
-                "output %lld: %ux%u rgba8=%u byte-exact MATCH\n",
-                static_cast<long long>(output.index),
-                width,
-                height,
-                rgba_size);
-        } else {
+        if (first_difference != SIZE_MAX) {
             std::fprintf(
                 stderr,
                 "output %lld: %ux%u rgba8=%u MISMATCH at byte %zu (produced %u, fixture %u)\n",
@@ -984,23 +1152,53 @@ struct HandleScope final {
                 expected[first_difference]);
             return false;
         }
+        std::printf(
+            "output %lld: %ux%u rgba8=%u byte-exact MATCH\n",
+            static_cast<long long>(output.index),
+            width,
+            height,
+            rgba_size);
     }
 
+    if (oracle) {
+        std::printf("{\"outcome\":\"frame\",\"outputs\":[");
+        for (size_t index = 0; index < oracle_outputs.size(); ++index) {
+            if (index != 0) {
+                std::printf(",");
+            }
+            const OracleOutput &output = oracle_outputs[index];
+            std::printf(
+                "{\"index\":%lld,\"format\":\"RGB24\",\"width\":%u,\"height\":%u,\"strides\":[%u],\"rgba\":\"%s\"}",
+                static_cast<long long>(output.index),
+                output.width,
+                output.height,
+                output.stride,
+                json_escape(output.rgba).c_str());
+        }
+        std::printf("]}\n");
+    }
     return true;
 }
 
 } // namespace
 
 int main(int argc, char **argv) {
-    if (argc < 2) {
-        std::fprintf(stderr, "usage: %s <plan.json>\n", argv[0]);
+    bool oracle = false;
+    std::string plan_path;
+    std::string output_directory;
+    if (argc == 2) {
+        plan_path = argv[1];
+    } else if (argc == 4 && std::string(argv[1]) == "--oracle") {
+        oracle = true;
+        plan_path = argv[2];
+        output_directory = argv[3];
+    } else {
+        std::fprintf(stderr, "usage: %s [--oracle] <plan.json> [output-directory]\n", argv[0]);
         return 64;
     }
 
-    const std::string plan_path = argv[1];
     const size_t slash = plan_path.find_last_of('/');
     const std::string plan_directory = slash == std::string::npos ? std::string() : plan_path.substr(0, slash);
-
     Json root;
     std::string error;
     if (!parse_plan_file(plan_path, root, error)) {
@@ -1013,22 +1211,31 @@ int main(int argc, char **argv) {
         std::fprintf(stderr, "%s\n", error.c_str());
         return 66;
     }
-
     if (vs_browser_handle_abi_version() != VS_BROWSER_HANDLE_ABI_VERSION) {
         std::fprintf(stderr, "browser handle ABI version mismatch\n");
         return 67;
     }
+    if (oracle) {
+        std::error_code directory_error;
+        std::filesystem::create_directories(output_directory, directory_error);
+        if (directory_error) {
+            std::fprintf(stderr, "could not create oracle output directory %s: %s\n", output_directory.c_str(), directory_error.message().c_str());
+            return 68;
+        }
+    } else {
+        std::printf(
+            "plan %s: %zu operation(s), %zu output(s)\n",
+            plan_path.c_str(),
+            plan.operations.size(),
+            plan.outputs.size());
+    }
 
-    std::printf(
-        "plan %s: %zu operation(s), %zu output(s)\n",
-        plan_path.c_str(),
-        plan.operations.size(),
-        plan.outputs.size());
-    if (!execute_plan(plan)) {
+    if (!execute_plan(plan, oracle, output_directory)) {
         std::fprintf(stderr, "plan %s failed\n", plan_path.c_str());
         return 1;
     }
-
-    std::printf("plan %s passed\n", plan_path.c_str());
+    if (!oracle) {
+        std::printf("plan %s passed\n", plan_path.c_str());
+    }
     return 0;
 }

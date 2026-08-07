@@ -1,74 +1,34 @@
 #!/usr/bin/env python3
-"""Generates the common-stdlib corpus: plan vectors + hand-derived golden RGBA8.
+"""Generate and verify the pinned native-VS conformance corpus.
 
-Every golden fixture is derived from the documented upstream semantics
-(vendor/vapoursynth/src/core), NOT from the runtime under test:
-  - BlankClip color fill: [r, g, b, 255] per pixel
-  - Invert / Lut(255-x): 255 - channel
-  - Crop / AddBorders / flips / turns / transpose / stacks: geometry
-  - Expr "x 96 +" on uint8: saturating add (clamp_int at store)
-  - Levels: lut[v] = u8(clamp(pow(clamp(v,min_in,max_in)-min_in)/(max_in-min_in),
-        gamma) * (max_out-min_out) + min_out, 0, 255) + 0.5)
-  - Median / Minimum / Maximum on a flat frame: identity
-  - ShufflePlanes planes [0,1,2] cfRGB=2: identity
+Plans are authored here; output bytes and failure messages are produced only by
+the native runner. The legacy plan declarations below pass an ignored third
+argument to ``emit`` so the operation corpus remains readable without keeping
+a second, hand-modeled renderer.
 """
 
+from __future__ import annotations
+
+import argparse
+import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import tomllib
 
 OUT = Path(__file__).resolve().parent / "vectors"
-FORMAT_RGB24 = 537395200  # VS_MAKE_VIDEO_ID(cfRGB=2, stInteger=0, 8, 0, 0)
+FORMAT_RGB24 = 537395200
 R, G, B = 32, 96, 224
-ALPHA = 255
 
 
-def flat(width, height, color):
-    return bytes([*color, ALPHA]) * (width * height)
+def _discarded_golden(*_args):
+    return [0] * 256
 
 
-def framed(width, height, color, left, right, top, bottom, border=(0, 0, 0)):
-    """Flat color frame with an asymmetric border of `border`."""
-    w = width + left + right
-    border_row = bytes([*border, ALPHA]) * w
-    middle_row = (
-        bytes([*border, ALPHA]) * left
-        + bytes([*color, ALPHA]) * width
-        + bytes([*border, ALPHA]) * right
-    )
-    return border_row * top + middle_row * height + border_row * bottom
-
-
-def transpose(width, height, data):
-    """data is width*height RGBA pixels, returns height*width RGBA pixels."""
-    out = bytearray(len(data))
-    for y in range(height):
-        for x in range(width):
-            src = (y * width + x) * 4
-            dst = (x * height + y) * 4
-            out[dst : dst + 4] = data[src : src + 4]
-    return bytes(out)
-
-
-def stackh(parts, height):
-    out = bytearray()
-    for y in range(height):
-        for w, data in parts:
-            out += data[y * w * 4 : (y + 1) * w * 4]
-    return bytes(out)
-
-def stackv(parts):
-    return b"".join(data for _, data in parts)
-
-
-def levels_lut(min_in, max_in, gamma, min_out, max_out):
-    gamma = 1.0 / gamma
-    lut = []
-    for v in range(256):
-        value = max(min(v, max_in) - min_in, 0.0) / (max_in - min_in)
-        value = pow(value, gamma) * (max_out - min_out) + min_out
-        value = max(min(value, 255.0), 0.0) + 0.5
-        lut.append(int(value))
-    return lut
+flat = framed = transpose = stackh = stackv = levels_lut = _discarded_golden
 
 
 def plan(operations, fixture_name):
@@ -79,26 +39,24 @@ def plan(operations, fixture_name):
             for i, (fn, args) in enumerate(operations)
         ],
         "outputs": [
-            {
-                "index": 0,
-                "node": len(operations),
-                "expected": f"{fixture_name}.rgba.bin",
-            }
+            {"index": 0, "node": len(operations), "expected": f"{fixture_name}.rgba.bin"}
         ],
     }
 
 
-def emit(name, operations, golden):
-    generated_plan = plan(operations, name)
+def emit(name, operations, _ignored_golden):
+    OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f"{name}.plan.json").write_text(
-        json.dumps(generated_plan, indent=2) + "\n",
+        json.dumps(plan(operations, name), indent=2) + "\n",
         encoding="utf-8",
     )
-    (OUT / f"{name}.rgba.bin").write_bytes(golden)
-    print(f"{name}: {len(golden)} bytes")
 
 
-def main():
+
+
+def generate_plans(destination):
+    global OUT
+    OUT = Path(destination)
     blank_a = [("BlankClip", [
         {"key": "width", "kind": "int", "value": 320},
         {"key": "height", "kind": "int", "value": 180},
@@ -239,5 +197,153 @@ def main():
     ])], flat(320, 180, (R, G, B)))
 
 
+def lock_provenance():
+    lock = tomllib.loads((Path(__file__).resolve().parents[2] / "third_party" / "lock.toml").read_text(encoding="utf-8"))
+    dependency = lock["dependencies"]["vapoursynth"]
+    return {
+        "repository": dependency["remote"],
+        "commit": dependency["commit"],
+        "nativePatches": [],
+        "browserPatches": dependency["patches"],
+        "nativeMesonOptions": ["enable_x86_asm=false", "enable_arm_asm=false"],
+    }
+
+
+def failure_plans():
+    return {
+        "unknown-function": plan(
+            [("DefinitelyNotAFunction", [])],
+            "unknown-function",
+        ),
+        "invert-without-clip": plan([("Invert", [])], "invert-without-clip"),
+    }
+
+
+def canonical_json(value):
+    return (json.dumps(value, indent=2, ensure_ascii=True) + "\n").encode("utf-8")
+
+
+def run_oracle(runner, plan_path, output_dir):
+    result = subprocess.run(
+        [str(runner), "--oracle", str(plan_path), str(output_dir)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"native oracle produced invalid JSON for {plan_path}: {error}; stderr={result.stderr.strip()}"
+        ) from error
+    return result.returncode, document
+
+
+def build_artifacts(runner, workspace):
+    plans_dir = workspace / "vectors"
+    output_dir = workspace / "oracle"
+    plans_dir.mkdir()
+    output_dir.mkdir()
+    generate_plans(plans_dir)
+    for name, document in failure_plans().items():
+        (plans_dir / f"{name}.plan.json").write_bytes(canonical_json(document))
+
+    cases = []
+    for plan_path in sorted(plans_dir.glob("*.plan.json")):
+        name = plan_path.stem
+        return_code, oracle = run_oracle(runner, plan_path, output_dir)
+        if oracle.get("outcome") == "error":
+            if return_code == 0:
+                raise RuntimeError(f"native oracle accepted unexpected error for {plan_path}")
+            error = oracle.get("error")
+            if not isinstance(error, dict):
+                raise RuntimeError(f"native oracle error envelope is malformed for {plan_path}")
+            plan_document = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan_document["expectedFailure"] = error
+            plan_path.write_bytes(canonical_json(plan_document))
+            return_code, verified = run_oracle(runner, plan_path, output_dir)
+            if return_code != 0 or verified != oracle:
+                raise RuntimeError(f"native oracle could not reproduce expected failure for {plan_path}")
+            cases.append({"name": name, "plan": plan_path.name, "outcome": "error", "error": error})
+            continue
+        if return_code != 0 or oracle.get("outcome") != "frame":
+            raise RuntimeError(f"native oracle failed for {plan_path}: {oracle}")
+        outputs = oracle.get("outputs")
+        if not isinstance(outputs, list) or not outputs:
+            raise RuntimeError(f"native oracle returned no outputs for {plan_path}")
+        manifest_outputs = []
+        for output in outputs:
+            rgba_name = output.get("rgba")
+            rgba_path = output_dir / rgba_name
+            if not isinstance(rgba_name, str) or not rgba_path.is_file():
+                raise RuntimeError(f"native oracle did not write {rgba_name} for {plan_path}")
+            digest = hashlib.sha256(rgba_path.read_bytes()).hexdigest()
+            shutil.copyfile(rgba_path, plans_dir / rgba_name)
+            manifest_outputs.append({
+                "index": output["index"],
+                "format": output["format"],
+                "width": output["width"],
+                "height": output["height"],
+                "strides": output["strides"],
+                "rgba": rgba_name,
+                "sha256": digest,
+            })
+        cases.append({"name": name, "plan": plan_path.name, "outcome": "frame", "outputs": manifest_outputs})
+
+    manifest = {
+        "schemaVersion": 1,
+        "upstream": lock_provenance(),
+        "cases": sorted(cases, key=lambda case: case["name"]),
+    }
+    (plans_dir / "conformance.json").write_bytes(canonical_json(manifest))
+    return plans_dir
+
+
+def compare_artifacts(generated):
+    expected = {
+        path.name: path.read_bytes()
+        for path in generated.iterdir()
+        if path.is_file() and (path.name.endswith(".plan.json") or path.name.endswith(".rgba.bin") or path.name == "conformance.json")
+    }
+    actual = {
+        path.name: path.read_bytes()
+        for path in OUT.iterdir()
+        if path.is_file() and (path.name.endswith(".plan.json") or path.name.endswith(".rgba.bin") or path.name == "conformance.json")
+    }
+    differences = sorted(set(expected) ^ set(actual))
+    differences.extend(sorted(name for name in set(expected) & set(actual) if expected[name] != actual[name]))
+    if differences:
+        raise RuntimeError("conformance artifacts are stale: " + ", ".join(differences))
+
+
+def refresh_artifacts(generated):
+    OUT.mkdir(parents=True, exist_ok=True)
+    generated_names = {path.name for path in generated.iterdir() if path.is_file()}
+    for path in OUT.iterdir():
+        if path.is_file() and (
+            path.name.endswith(".plan.json") or path.name.endswith(".rgba.bin") or path.name == "conformance.json"
+        ) and path.name not in generated_names:
+            path.unlink()
+    for path in generated.iterdir():
+        if path.is_file():
+            os.replace(path, OUT / path.name)
+
+
+def main():
+    global OUT
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--runner", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--refresh", action="store_true")
+    mode.add_argument("--check", action="store_true")
+    arguments = parser.parse_args()
+    source_out = OUT
+    with tempfile.TemporaryDirectory(prefix="native-conformance-", dir=OUT.parent) as temporary:
+        generated = build_artifacts(Path(arguments.runner), Path(temporary))
+        OUT = source_out
+        if arguments.refresh:
+            refresh_artifacts(generated)
+        else:
+            compare_artifacts(generated)
 if __name__ == "__main__":
     main()

@@ -43,7 +43,7 @@ jobs:
           enable-cache: true
       - name: Sync UV tools
         run: uv sync --locked
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: wasm32-unknown-emscripten
       - name: Restore Emscripten SDK

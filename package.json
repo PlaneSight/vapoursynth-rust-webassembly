@@ -12,7 +12,7 @@
     "serve:isolated": "uv run --locked python tools/serve-browser.py --port 4173 --directory build/web --cross-origin-isolation"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "pyodide": "0.29.4"
   }
 }

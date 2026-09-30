@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -90,7 +90,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libzimg-dev
       - name: Verify host-native VapourSynth conformance
         run: ./tools/build-native-conformance.sh
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy
           targets: wasm32-unknown-emscripten
